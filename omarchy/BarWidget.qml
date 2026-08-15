@@ -13,15 +13,21 @@ BarWidget {
   moduleName: "luca.wireview-pro2"
 
   // The plugin bundles a statically linked x86_64 backend next to this file.
-  // If it cannot start (other architecture, missing exec bit, ...), fall back
-  // to a `wireview-pro2-qs` binary on PATH (crates.io or AUR install).
-  // Quickshell emits neither `started` nor `exited` when a spawn fails, only
-  // a `running` false edge, so a failed start shows up as runningChanged
-  // without a preceding started signal.
+  // Each process keeps its own binary choice: the bundled one first, a PATH
+  // install ("wireview-pro2-qs", crates.io or AUR) as fallback. A single
+  // transient spawn failure must not abandon the bundle, so the choice only
+  // flips after repeated consecutive failures — and it flips back, so a
+  // restored bundle (e.g. after `omarchy plugin update`) is picked up
+  // without a shell restart.
   readonly property string bundledBinary: Qt.resolvedUrl("bin/wireview-pro2-qs")
     .toString().replace(/^file:\/\//, "")
-  property bool binaryFallback: false
-  readonly property string backendBinary: binaryFallback ? "wireview-pro2-qs" : bundledBinary
+  readonly property int fallbackThreshold: 2
+  property bool watchFallback: false
+  property bool actionFallback: false
+  property int watchFailures: 0
+  property int actionFailures: 0
+  readonly property string watchBinary: watchFallback ? "wireview-pro2-qs" : bundledBinary
+  readonly property string actionBinary: actionFallback ? "wireview-pro2-qs" : bundledBinary
   property string pendingAction: ""
 
   readonly property var panelItem: panelLoader.item
@@ -55,7 +61,8 @@ BarWidget {
   function runAction(action) {
     if (actionProc.running) return
     root.pendingAction = action
-    actionProc.command = [root.backendBinary, action]
+    actionProc.retried = false
+    actionProc.command = [root.actionBinary, action]
     actionProc.running = true
   }
 
@@ -90,7 +97,7 @@ BarWidget {
 
   Process {
     id: watchProc
-    command: [root.backendBinary, "watch"]
+    command: [root.watchBinary, "watch"]
     // True between a successful start and the process exiting. A `running`
     // false edge without it means the spawn failed: Quickshell then emits
     // neither started nor exited, so onExited would never retry.
@@ -98,7 +105,10 @@ BarWidget {
     stdout: SplitParser {
       onRead: function(line) { root.applyLine(line) }
     }
-    onStarted: watchProc.startedOnce = true
+    onStarted: {
+      watchProc.startedOnce = true
+      root.watchFailures = 0
+    }
     onExited: {
       root.statusState = "off"
       watchRestartTimer.restart()
@@ -107,9 +117,13 @@ BarWidget {
       if (watchProc.running) return
       var failedStart = !watchProc.startedOnce
       watchProc.startedOnce = false
-      if (failedStart && !root.binaryFallback) {
-        root.binaryFallback = true
+      if (failedStart) {
         root.statusState = "off"
+        root.watchFailures += 1
+        if (root.watchFailures >= root.fallbackThreshold) {
+          root.watchFailures = 0
+          root.watchFallback = !root.watchFallback
+        }
       }
       watchRestartTimer.restart()
     }
@@ -124,20 +138,33 @@ BarWidget {
 
   Process {
     id: actionProc
-    // Same spawn-failure detection as watchProc; on failure retry the action
-    // once with a PATH binary instead of silently dropping the click.
+    // Same spawn-failure detection as watchProc. An action is retried once
+    // per click on the current binary; only repeated failures across clicks
+    // switch the binary, independently of the watch process.
     property bool startedOnce: false
-    onStarted: actionProc.startedOnce = true
+    property bool retried: false
+    onStarted: {
+      actionProc.startedOnce = true
+      root.actionFailures = 0
+    }
     onRunningChanged: {
       if (actionProc.running) return
       var failedStart = !actionProc.startedOnce
       actionProc.startedOnce = false
       if (!failedStart || root.pendingAction === "") return
-      if (!root.binaryFallback) {
-        root.binaryFallback = true
-        actionProc.command = [root.backendBinary, root.pendingAction]
-        actionProc.running = true
+      if (actionProc.retried) {
+        actionProc.retried = false
+        root.pendingAction = ""
+        root.actionFailures += 1
+        if (root.actionFailures >= root.fallbackThreshold) {
+          root.actionFailures = 0
+          root.actionFallback = !root.actionFallback
+        }
+        return
       }
+      actionProc.retried = true
+      actionProc.command = [root.actionBinary, root.pendingAction]
+      actionProc.running = true
     }
   }
 
