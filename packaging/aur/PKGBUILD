@@ -12,7 +12,7 @@ makedepends=('cargo')
 optdepends=('wireview-linux-bin: the WireView Pro II app this backend monitors')
 conflicts=('wireview-pro2-qs-bin')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('e0362667aad362b7985c67353fb7b39950095c1e64c28436bf6cf6673ea19666')
 
 prepare() {
     cd "$pkgname-$pkgver"

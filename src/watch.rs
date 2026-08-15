@@ -32,12 +32,19 @@ pub fn watch() {
 
         if last.as_ref() != Some(&status) {
             let mut stdout = io::stdout().lock();
+            let mut broken = false;
+            if let Ok(json) = serde_json::to_string(&status) {
+                broken = writeln!(stdout, "{json}").is_err();
+            }
             // A serialization failure would only mean a bug in Status; the
             // line must still be flushed so the QML parser never stalls.
-            if let Ok(json) = serde_json::to_string(&status) {
-                let _ = writeln!(stdout, "{json}");
+            broken |= stdout.flush().is_err();
+            if broken {
+                // The consumer is gone (shell crashed or exited without
+                // reaping us); polling the bus forever would leak the
+                // process and its session-bus connection.
+                return;
             }
-            let _ = stdout.flush();
             last = Some(status);
         }
 
