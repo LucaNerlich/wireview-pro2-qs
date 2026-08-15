@@ -4,7 +4,10 @@
 //! `-1`); the second one carries the live reading in its `Title` property.
 //! Discovery goes through the StatusNotifierWatcher so no pid is hardcoded.
 
+use std::time::Duration;
+
 use zbus::blocking::Connection;
+use zbus::blocking::connection::Builder;
 use zbus::names::BusName;
 use zbus::zvariant::OwnedValue;
 
@@ -12,6 +15,11 @@ pub const SNI_INTERFACE: &str = "org.kde.StatusNotifierItem";
 pub const WATCHER_SERVICE: &str = "org.kde.StatusNotifierWatcher";
 pub const WATCHER_PATH: &str = "/StatusNotifierWatcher";
 const PROPERTIES_INTERFACE: &str = "org.freedesktop.DBus.Properties";
+
+/// How long a DBus method call may take before it fails. A hung SNI peer
+/// (still owning its bus name but not replying) must not stall the 1 Hz
+/// watch poll or `status` forever.
+const METHOD_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A registered StatusNotifierItem: the owning service and its object path.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +29,7 @@ pub struct ItemRef {
 }
 
 pub fn session() -> zbus::Result<Connection> {
-    Connection::session()
+    Builder::session()?.method_timeout(METHOD_TIMEOUT).build()
 }
 
 fn get_property(
