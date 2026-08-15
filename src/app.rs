@@ -1,6 +1,7 @@
 //! Process and window management for the WireView2 app.
 
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -48,6 +49,28 @@ pub fn launch() -> std::io::Result<()> {
     Ok(())
 }
 
+/// True when `/proc/<pid>` belongs to the current user and its argv[0] is
+/// the app binary. Re-checking identity immediately before a signal keeps
+/// pid recycling from redirecting the kill at an unrelated process.
+fn is_wireview_process(pid: i32) -> bool {
+    let proc = format!("/proc/{pid}");
+    let Ok(meta) = fs::metadata(&proc) else {
+        return false;
+    };
+    // SAFETY: getuid has no preconditions.
+    if meta.uid() != unsafe { libc::getuid() } {
+        return false;
+    }
+    let Ok(cmdline) = fs::read(format!("{proc}/cmdline")) else {
+        return false;
+    };
+    cmdline
+        .split(|&b| b == 0)
+        .next()
+        .filter(|field| !field.is_empty())
+        .is_some_and(|field| field == APP_BINARY.as_bytes())
+}
+
 /// SIGTERM every pid, wait up to `timeout` for them to exit, then SIGKILL
 /// the stragglers.
 pub fn terminate(pids: &[i32], timeout: Duration) {
@@ -56,17 +79,27 @@ pub fn terminate(pids: &[i32], timeout: Duration) {
         unsafe { libc::kill(pid, libc::SIGTERM) };
     }
 
+    // Wait on the originally collected pids only; a rescan could pick up a
+    // concurrently launched instance and never settle.
     let deadline = Instant::now() + timeout;
     loop {
-        let alive = running_pids();
-        if alive.is_empty() || Instant::now() >= deadline {
+        let any_alive = pids.iter().any(|&pid| {
+            // SAFETY: checking process existence with a valid pid.
+            (unsafe { libc::kill(pid, 0) }) == 0
+        });
+        if !any_alive || Instant::now() >= deadline {
             break;
         }
         thread::sleep(Duration::from_millis(100));
     }
 
-    for &pid in running_pids().iter() {
-        // SAFETY: signalling another process with a valid pid.
+    // The pid may have been recycled since the scan; only escalate when the
+    // process still looks like the app.
+    for &pid in pids {
+        if !is_wireview_process(pid) {
+            continue;
+        }
+        // SAFETY: signalling a verified WireView process with a valid pid.
         unsafe { libc::kill(pid, libc::SIGKILL) };
     }
 }
@@ -116,6 +149,19 @@ mod tests {
     #[test]
     fn marker_matches_binary_path() {
         assert!(APP_BINARY.contains(PROC_MARKER));
+    }
+
+    #[test]
+    fn terminate_returns_for_nonexistent_pid() {
+        let start = Instant::now();
+        terminate(&[i32::MAX], Duration::from_secs(1));
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn non_wireview_process_is_not_identified() {
+        assert!(!is_wireview_process(i32::MAX));
+        assert!(!is_wireview_process(1));
     }
 
     #[test]
