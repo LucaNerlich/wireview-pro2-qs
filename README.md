@@ -28,6 +28,7 @@ This widget reads the item over DBus directly and takes the tray icon's place.
   over DBus; it does not talk to the device itself. Install it first
   (`wireview-linux-bin` on AUR). Without it the widget shows `⚡ off` and the
   open action has nothing to launch.
+- https://github.com/emaspa/wireview-linux  
 - `hyprctl` (ships with Hyprland) for window focus.
 
 ## Architecture
