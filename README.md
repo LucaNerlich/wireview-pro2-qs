@@ -4,6 +4,8 @@ Omarchy Quattro bar widget showing the live GPU power draw from the
 [Thermal Grizzly WireView Pro II](https://www.thermal-grizzly.com/en/wireview-pro-ii-gpu/s-tg-wv-p2)
 (e.g. `⚡ 57 W`), with a details panel for app actions.
 
+<img width="464" height="180" alt="image" src="https://github.com/user-attachments/assets/9a9f600a-c641-4f4d-8816-bd1b347c47fc" />
+
 ## Why this exists
 
 The WireView2 app (Avalonia) publishes its power reading in the `Title`
