@@ -57,6 +57,12 @@ One command:
 omarchy plugin add https://github.com/LucaNerlich/wireview-pro2-qs.git --enable
 ```
 
+Update to the latest version the same way you would any marketplace plugin:
+
+```bash
+omarchy plugin update luca.wireview-pro2
+```
+
 The plugin bundles a statically linked x86_64 build of its backend
 (`omarchy/bin/wireview-pro2-qs`, built on musl, refreshed by CI on every push
 to main). If the bundled binary cannot start — non-x86_64 machine, missing
