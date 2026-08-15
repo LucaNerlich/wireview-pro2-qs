@@ -1,0 +1,21 @@
+# Maintainer: Luca Nerlich
+
+pkgname=wireview-pro2-qs-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Omarchy Quattro bar widget backend for the Thermal Grizzly WireView Pro II (prebuilt binary)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/LucaNerlich/wireview-pro2-qs"
+license=('Apache-2.0')
+depends=('gcc-libs' 'hyprland')
+optdepends=('wireview-linux-bin: the WireView Pro II app this backend monitors')
+conflicts=('wireview-pro2-qs')
+source_x86_64=("$pkgname-$pkgver.tar.gz::https://github.com/LucaNerlich/wireview-pro2-qs/releases/download/v$pkgver/wireview-pro2-qs-$pkgver-linux-x86_64.tar.gz")
+source_aarch64=("$pkgname-$pkgver.tar.gz::https://github.com/LucaNerlich/wireview-pro2-qs/releases/download/v$pkgver/wireview-pro2-qs-$pkgver-linux-aarch64.tar.gz")
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+    install -Dm0755 -t "$pkgdir/usr/bin/" "wireview-pro2-qs"
+    install -Dm0644 -t "$pkgdir/usr/share/licenses/$pkgname/" "LICENSE"
+}

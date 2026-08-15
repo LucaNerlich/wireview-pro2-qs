@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "luca.wireview-pro2",
+  "name": "WireView Pro II",
+  "version": "0.1.0",
+  "author": "Luca Nerlich",
+  "license": "Apache-2.0",
+  "description": "Live GPU power draw from the Thermal Grizzly WireView Pro II, read from the WireView2 app over DBus. The app's own tray icon is rejected by the shell because it violates the SNI spec, so this widget takes its place.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "omarchy/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "WireView Pro II",
+    "description": "Shows the live power draw measured by the WireView Pro II device.",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "hideWhenOff": false
+    },
+    "schema": [
+      {
+        "key": "hideWhenOff",
+        "type": "boolean",
+        "label": "Hide when off",
+        "description": "Hide the widget entirely when the WireView app is not running.",
+        "defaultValue": false
+      }
+    ]
+  }
+}

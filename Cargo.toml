@@ -1,0 +1,31 @@
+[package]
+name = "wireview-pro2-qs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Omarchy Quattro bar widget backend for the Thermal Grizzly WireView Pro II GPU power monitor"
+readme = "README.md"
+repository = "https://github.com/LucaNerlich/wireview-pro2-qs"
+keywords = ["omarchy", "wireview", "dbus", "power-monitor"]
+categories = ["command-line-utilities"]
+
+[lib]
+name = "wireview_pro2_qs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wireview-pro2-qs"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zbus = { version = "5", features = ["blocking"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
