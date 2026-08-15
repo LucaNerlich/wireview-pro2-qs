@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "luca.wireview-pro2",
   "name": "WireView Pro II",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Luca Nerlich",
   "license": "Apache-2.0",
   "description": "Live GPU power draw from the Thermal Grizzly WireView Pro II, read from the WireView2 app over DBus. The app's own tray icon is rejected by the shell because it violates the SNI spec, so this widget takes its place.",

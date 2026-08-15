@@ -1,5 +1,7 @@
 # wireview-pro2-qs
 
+[![GitHub Release](https://img.shields.io/github/v/release/LucaNerlich/wireview-pro2-qs)](https://github.com/LucaNerlich/wireview-pro2-qs/releases)
+
 Omarchy Quattro bar widget showing the live GPU power draw from the
 [Thermal Grizzly WireView Pro II](https://www.thermal-grizzly.com/en/wireview-pro-ii-gpu/s-tg-wv-p2)
 (e.g. `⚡ 57 W`), with a details panel for app actions.
