@@ -12,6 +12,18 @@ BarWidget {
   id: root
   moduleName: "luca.wireview-pro2"
 
+  // The plugin bundles a statically linked x86_64 backend next to this file.
+  // If it cannot start (other architecture, missing exec bit, ...), fall back
+  // to a `wireview-pro2-qs` binary on PATH (crates.io or AUR install).
+  // Quickshell emits neither `started` nor `exited` when a spawn fails, only
+  // a `running` false edge, so a failed start shows up as runningChanged
+  // without a preceding started signal.
+  readonly property string bundledBinary: Qt.resolvedUrl("bin/wireview-pro2-qs")
+    .toString().replace(/^file:\/\//, "")
+  property bool binaryFallback: false
+  readonly property string backendBinary: binaryFallback ? "wireview-pro2-qs" : bundledBinary
+  property string pendingAction: ""
+
   readonly property var panelItem: panelLoader.item
   readonly property bool opened: panelItem ? panelItem.opened === true : false
 
@@ -42,7 +54,8 @@ BarWidget {
 
   function runAction(action) {
     if (actionProc.running) return
-    actionProc.command = ["wireview-pro2-qs", action]
+    root.pendingAction = action
+    actionProc.command = [root.backendBinary, action]
     actionProc.running = true
   }
 
@@ -77,12 +90,27 @@ BarWidget {
 
   Process {
     id: watchProc
-    command: ["wireview-pro2-qs", "watch"]
+    command: [root.backendBinary, "watch"]
+    // True between a successful start and the process exiting. A `running`
+    // false edge without it means the spawn failed: Quickshell then emits
+    // neither started nor exited, so onExited would never retry.
+    property bool startedOnce: false
     stdout: SplitParser {
       onRead: function(line) { root.applyLine(line) }
     }
+    onStarted: watchProc.startedOnce = true
     onExited: {
       root.statusState = "off"
+      watchRestartTimer.restart()
+    }
+    onRunningChanged: {
+      if (watchProc.running) return
+      var failedStart = !watchProc.startedOnce
+      watchProc.startedOnce = false
+      if (failedStart && !root.binaryFallback) {
+        root.binaryFallback = true
+        root.statusState = "off"
+      }
       watchRestartTimer.restart()
     }
   }
@@ -96,6 +124,21 @@ BarWidget {
 
   Process {
     id: actionProc
+    // Same spawn-failure detection as watchProc; on failure retry the action
+    // once with a PATH binary instead of silently dropping the click.
+    property bool startedOnce: false
+    onStarted: actionProc.startedOnce = true
+    onRunningChanged: {
+      if (actionProc.running) return
+      var failedStart = !actionProc.startedOnce
+      actionProc.startedOnce = false
+      if (!failedStart || root.pendingAction === "") return
+      if (!root.binaryFallback) {
+        root.binaryFallback = true
+        actionProc.command = [root.backendBinary, root.pendingAction]
+        actionProc.running = true
+      }
+    }
   }
 
   WidgetButton {

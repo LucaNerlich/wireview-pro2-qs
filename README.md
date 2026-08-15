@@ -49,17 +49,23 @@ wireview-pro2-qs watch ──(JSON lines, 1 Hz)──▶ SplitParser ─▶ BarW
 
 ## Install
 
-The plugin does not install its executable dependency. Install the binary
-first, then the plugin:
+One command:
+
+```bash
+omarchy plugin add https://github.com/LucaNerlich/wireview-pro2-qs.git --enable
+```
+
+The plugin bundles a statically linked x86_64 build of its backend
+(`omarchy/bin/wireview-pro2-qs`, built on musl, refreshed by CI on every push
+to main). If the bundled binary cannot start — non-x86_64 machine, missing
+exec bit, whatever — the widget falls back to a `wireview-pro2-qs` binary on
+PATH, so these still work:
 
 ```bash
 # Binary (pick one)
 cargo install wireview-pro2-qs            # from crates.io
 yay -S wireview-pro2-qs                   # AUR source build
 yay -S wireview-pro2-qs-bin               # AUR prebuilt binary
-
-# Plugin
-omarchy plugin add https://github.com/LucaNerlich/wireview-pro2-qs.git --enable
 ```
 
 Omarchy clones the plugin into `~/.config/omarchy/plugins/` and adds the
@@ -125,9 +131,16 @@ omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" omarchy/BarWidget.qml omarchy/Panel.qml
 ```
 
+`make bundle` rebuilds the statically linked backend into `omarchy/bin/`
+(requires the `x86_64-unknown-linux-musl` target: `rustup target add
+x86_64-unknown-linux-musl`). CI refreshes the committed binary on every push
+to main.
+
 Saving files under an installed user plugin triggers Quattro's plugin hot
 reload. Rerun `omarchy plugin validate .` after changing the manifest or
-entry points.
+entry points. Note: on quickshell-git 0.3.0 `Qt.clearComponentCache` is
+unavailable, so plugin QML changes only take effect after a full
+`omarchy restart shell`.
 
 ## License
 
