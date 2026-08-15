@@ -40,11 +40,16 @@ impl Status {
         if let Some(rest) = title.strip_prefix("WireView Pro II - ") {
             if let Some(number) = rest.strip_suffix(" W") {
                 if let Ok(watts) = number.parse::<f64>() {
-                    return Some(Self {
-                        state: State::Live,
-                        watts: Some(watts),
-                        title: Some(title.to_string()),
-                    });
+                    // "NaN" / "inf" parse as f64 but are not real readings;
+                    // accepting them would serialize NaN as null and make
+                    // the watch stream re-emit the line every poll.
+                    if watts.is_finite() {
+                        return Some(Self {
+                            state: State::Live,
+                            watts: Some(watts),
+                            title: Some(title.to_string()),
+                        });
+                    }
                 }
             }
         }
@@ -99,6 +104,20 @@ mod tests {
     fn rejects_malformed_reading() {
         let s = Status::from_title(Some("WireView Pro II - abc W")).unwrap();
         assert_eq!(s.state, State::Na);
+    }
+
+    #[test]
+    fn rejects_non_finite_reading() {
+        for title in [
+            "WireView Pro II - NaN W",
+            "WireView Pro II - inf W",
+            "WireView Pro II - -inf W",
+            "WireView Pro II - 1e999 W",
+        ] {
+            let s = Status::from_title(Some(title)).unwrap();
+            assert_eq!(s.state, State::Na, "{title}");
+            assert_eq!(s.watts, None, "{title}");
+        }
     }
 
     #[test]

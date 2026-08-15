@@ -19,8 +19,19 @@ BarWidget {
   // flips after repeated consecutive failures — and it flips back, so a
   // restored bundle (e.g. after `omarchy plugin update`) is picked up
   // without a shell restart.
-  readonly property string bundledBinary: Qt.resolvedUrl("bin/wireview-pro2-qs")
-    .toString().replace(/^file:\/\//, "")
+  function decodeFileUrl(urlString) {
+    // resolvedUrl keeps percent-encoding intact, which QProcess would then
+    // treat as part of the file name; decode it so install paths containing
+    // spaces or non-ASCII characters work.
+    var path = String(urlString).replace(/^file:\/\//, "")
+    try {
+      return decodeURIComponent(path)
+    } catch (e) {
+      return path
+    }
+  }
+  readonly property string bundledBinary: root.decodeFileUrl(
+    Qt.resolvedUrl("bin/wireview-pro2-qs").toString())
   readonly property int fallbackThreshold: 2
   property bool watchFallback: false
   property bool actionFallback: false
