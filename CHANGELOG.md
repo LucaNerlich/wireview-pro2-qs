@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-08-15
+
+First stable release. One-click install via `omarchy plugin add
+https://github.com/LucaNerlich/wireview-pro2-qs.git --enable` with a bundled
+static backend; fixes the findings of the 2026-08-15 code audit.
+
+### Fixed
+
+- DBus method calls have a 2 s timeout, so a hung SNI-registered app can no
+  longer freeze the widget or `status` indefinitely.
+- Process management matches only the real app binary and only the invoking
+  user's processes; editors viewing the binary and lookalike processes are no
+  longer terminated, and `quit`/`restart` no longer stall on other users'
+  processes.
+- Termination signals only the processes it scanned and re-verifies their
+  identity before SIGKILL, so recycled pids cannot redirect the kill.
+- A rapid second click no longer kills a freshly launched app instance.
+- Tab now moves to the neighboring bar panel as documented.
+- Backend fallback decisions are per-process, tolerate transient spawn
+  failures, and re-probe the bundled binary automatically after it is
+  restored.
+- The watch backend exits when its consumer disappears instead of leaking a
+  polling process.
+- Non-finite watt readings (NaN/inf) fall back to the `na` state instead of
+  re-emitting a JSON line every second.
+- Install paths containing spaces or non-ASCII characters now resolve the
+  bundled binary correctly.
+
+### Changed
+
+- The source AUR package verifies the release tarball checksum.
+- CI refreshes the bundled binary only when the test jobs pass.
+
 ## [0.2.0] - 2026-08-15
 
 ### Added
@@ -39,5 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.0.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v1.0.0
 [0.2.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v0.2.0
 [0.1.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v0.1.0
