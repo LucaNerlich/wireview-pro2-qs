@@ -1,16 +1,27 @@
 //! Process and window management for the WireView2 app.
 
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
 /// How the app is launched on this system (wireview-linux-bin AUR package).
 pub const APP_BINARY: &str = "/usr/bin/wireview-linux";
-/// Substring that identifies the app in `/proc/<pid>/cmdline`.
-pub const PROC_MARKER: &str = "wireview-linux";
 
-/// PIDs of every process whose command line mentions the WireView app.
+/// True when `cmdline` belongs to the WireView app: the process must have
+/// been started as the app binary itself (argv[0] is the exact binary path).
+/// Substring matching would also collect editors viewing the binary and
+/// lookalike scripts, which `terminate` would then kill.
+fn is_wireview_cmdline(cmdline: &[u8]) -> bool {
+    cmdline
+        .split(|&b| b == 0)
+        .next()
+        .filter(|field| !field.is_empty())
+        .is_some_and(|field| field == APP_BINARY.as_bytes())
+}
+
+/// PIDs of every running WireView app process owned by the current user.
 pub fn running_pids() -> Vec<i32> {
     let mut pids = Vec::new();
     let Ok(entries) = fs::read_dir("/proc") else {
@@ -22,11 +33,21 @@ pub fn running_pids() -> Vec<i32> {
         let Some(pid) = name.to_str().and_then(|s| s.parse::<i32>().ok()) else {
             continue;
         };
-        let Ok(cmdline) = fs::read(format!("/proc/{pid}/cmdline")) else {
+        let proc = format!("/proc/{pid}");
+        // Other users' processes can never be signalled; skip them so the
+        // termination loop does not spin on EPERM until its timeout.
+        // SAFETY: getuid has no preconditions.
+        let uid = unsafe { libc::getuid() };
+        let Ok(meta) = fs::metadata(&proc) else {
             continue;
         };
-        let text = String::from_utf8_lossy(&cmdline);
-        if text.split('\0').any(|arg| arg.contains(PROC_MARKER)) {
+        if meta.uid() != uid {
+            continue;
+        }
+        let Ok(cmdline) = fs::read(format!("{proc}/cmdline")) else {
+            continue;
+        };
+        if is_wireview_cmdline(&cmdline) {
             pids.push(pid);
         }
     }
@@ -114,8 +135,33 @@ mod tests {
     }
 
     #[test]
-    fn marker_matches_binary_path() {
-        assert!(APP_BINARY.contains(PROC_MARKER));
+    fn cmdline_matches_binary_path() {
+        assert!(is_wireview_cmdline(APP_BINARY.as_bytes()));
+    }
+
+    #[test]
+    fn cmdline_matches_binary_with_args() {
+        let cmdline = format!("{APP_BINARY}\0--minimized\0");
+        assert!(is_wireview_cmdline(cmdline.as_bytes()));
+    }
+
+    #[test]
+    fn cmdline_rejects_editor_viewing_binary() {
+        let cmdline = format!("vim\0{APP_BINARY}\0");
+        assert!(!is_wireview_cmdline(cmdline.as_bytes()));
+    }
+
+    #[test]
+    fn cmdline_rejects_lookalike_name() {
+        assert!(!is_wireview_cmdline(
+            format!("{APP_BINARY}-helper").as_bytes()
+        ));
+    }
+
+    #[test]
+    fn cmdline_rejects_empty() {
+        assert!(!is_wireview_cmdline(b"\0"));
+        assert!(!is_wireview_cmdline(b""));
     }
 
     #[test]
