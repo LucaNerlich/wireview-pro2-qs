@@ -15,6 +15,10 @@ Panel {
 
   property var anchorItem: null
   property var hostWidget: null
+  // The bar tracks the widget mounted in its slot — BarWidget.qml — not this
+  // nested panel, so everything the bar identifies a panel by must be that
+  // widget (same pattern as the built-in clock panel).
+  readonly property var barIdentity: hostWidget || root
   readonly property var watcher: hostWidget || root
   readonly property bool hasWatcher: watcher !== null && watcher !== root
 
@@ -37,6 +41,15 @@ Panel {
     if (!hasWatcher || typeof watcher.runAction !== "function") return
     watcher.runAction(action)
     root.close()
+  }
+
+  // The base Panel passes `root` (this Panel) to bar.switchPanelFrom, which
+  // only matches slot.activeItem — the BarWidget. Route through barIdentity
+  // so Tab actually moves to the neighboring bar panel.
+  function switchPanel(direction) {
+    if (root.bar && typeof root.bar.switchPanelFrom === "function")
+      return root.bar.switchPanelFrom(root.barIdentity, direction)
+    return false
   }
 
   KeyboardPanel {
