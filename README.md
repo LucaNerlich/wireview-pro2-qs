@@ -20,6 +20,14 @@ So the app never shows up in the Omarchy tray, and combined with the app's
 "start minimized" setting the process runs with no visible window at all.
 This widget reads the item over DBus directly and takes the tray icon's place.
 
+## Requirements
+
+- **The WireView2 app is required.** This widget reads the app's SNI item
+  over DBus; it does not talk to the device itself. Install it first
+  (`wireview-linux-bin` on AUR). Without it the widget shows `⚡ off` and the
+  open action has nothing to launch.
+- `hyprctl` (ships with Hyprland) for window focus.
+
 ## Architecture
 
 - **Rust backend** (`wireview-pro2-qs` binary): talks to the session bus with
