@@ -64,10 +64,16 @@ omarchy plugin update luca.wireview-pro2
 ```
 
 The plugin bundles a statically linked x86_64 build of its backend
-(`omarchy/bin/wireview-pro2-qs`, built on musl, refreshed by CI on every push
-to main). If the bundled binary cannot start — non-x86_64 machine, missing
-exec bit, whatever — the widget falls back to a `wireview-pro2-qs` binary on
-PATH, so these still work:
+(`omarchy/bin/wireview-pro2-qs`, built on musl). The binary is committed
+without stripping, so its symbol table maps to the Rust source and can be
+inspected with `nm`. It is also a byte-for-byte reproducible build of the
+source in this repository: the toolchain is pinned by `rust-toolchain.toml`,
+machine-specific paths are remapped, and the expected SHA-256 is recorded in
+`omarchy/bin/wireview-pro2-qs.sha256`. Anyone can confirm it against this
+exact checkout with `make verify-bundle`; CI fails the build if the committed
+binary ever drifts from the tracked source. If the bundled binary cannot
+start — non-x86_64 machine, missing exec bit, whatever — the widget falls
+back to a `wireview-pro2-qs` binary on PATH, so these still work:
 
 ```bash
 # Binary (pick one)
@@ -139,10 +145,11 @@ omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" omarchy/BarWidget.qml omarchy/Panel.qml
 ```
 
-`make bundle` rebuilds the statically linked backend into `omarchy/bin/`
-(requires the `x86_64-unknown-linux-musl` target: `rustup target add
-x86_64-unknown-linux-musl`). CI refreshes the committed binary on every push
-to main.
+`make bundle` rebuilds the statically linked backend into `omarchy/bin/` and
+`make verify-bundle` checks that the committed binary is byte-identical to a
+fresh reproducible build (both need the `x86_64-unknown-linux-musl` target:
+`rustup target add x86_64-unknown-linux-musl`). The toolchain is pinned in
+`rust-toolchain.toml`, and CI verifies the bundle instead of regenerating it.
 
 Saving files under an installed user plugin triggers Quattro's plugin hot
 reload. Rerun `omarchy plugin validate .` after changing the manifest or

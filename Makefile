@@ -1,7 +1,7 @@
 PREFIX ?= /usr/local
 CARGO ?= cargo
 
-.PHONY: build install uninstall test plugin-test validate fmt clippy bundle clean
+.PHONY: build install uninstall test plugin-test validate fmt clippy bundle verify-bundle clean
 
 build:
 	$(CARGO) build --release
@@ -13,8 +13,10 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/wireview-pro2-qs
 
 bundle:
-	$(CARGO) build --release --locked --target x86_64-unknown-linux-musl
-	install -Dm755 target/x86_64-unknown-linux-musl/release/wireview-pro2-qs omarchy/bin/wireview-pro2-qs
+	scripts/build-bundle.sh
+
+verify-bundle:
+	scripts/verify-bundle.sh
 
 test:
 	$(CARGO) test --all-targets

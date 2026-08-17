@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The bundled backend is now committed with its symbol table intact (not
+  stripped) and byte-for-byte reproducible from the tracked Rust source
+  (pinned toolchain via `rust-toolchain.toml`, remapped build paths, recorded
+  SHA-256 in `omarchy/bin/wireview-pro2-qs.sha256`). CI verifies the bundle
+  against a fresh build instead of regenerating it.
+
 ## [1.0.0] - 2026-08-15
 
 First stable release. One-click install via `omarchy plugin add
@@ -72,6 +82,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[Unreleased]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v1.0.0
 [0.2.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v0.2.0
 [0.1.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v0.1.0

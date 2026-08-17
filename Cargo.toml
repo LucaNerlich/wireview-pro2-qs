@@ -28,4 +28,4 @@ zbus = { version = "5", features = ["blocking"] }
 [profile.release]
 lto = "thin"
 codegen-units = 1
-strip = "symbols"
+strip = "debuginfo"
