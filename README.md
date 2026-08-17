@@ -26,20 +26,22 @@ This widget reads the item over DBus directly and takes the tray icon's place.
 
 ## Requirements
 
-- **The WireView2 app is required.** This widget reads the app's SNI item
-  over DBus; it does not talk to the device itself. Install it first
-  (`wireview-linux-bin` on AUR). Without it the widget shows `⚡ off` and the
-  open action has nothing to launch.
-- https://github.com/emaspa/wireview-linux  
+- **The WireView2 app** (`wireview-linux-bin` on AUR) — provides the
+  Open / Restart / Quit actions and the wattage-only fallback. Install it to
+  control the app; without it the widget shows `⚡ off` and the open action
+  has nothing to launch. https://github.com/emaspa/wireview-linux
+- **wireview-hwmon** (optional, recommended) — enables the full per-pin,
+  temperature, and fault panel. See “Full sensor data” below.
 - `hyprctl` (ships with Hyprland) for window focus.
 
 ## Architecture
 
-- **Rust backend** (`wireview-pro2-qs` binary): talks to the session bus with
-  zbus, discovers the app's SNI item through the StatusNotifierWatcher, reads
-  the live `Title`, and manages the app process (launch / focus / restart /
-  quit, including Hyprland's lua dispatcher). No shelling out to busctl or
-  dbus-send; the only external command is `hyprctl` for window management.
+- **Rust backend** (`wireview-pro2-qs` binary): prefers the `wireview` hwmon
+  chip (full per-pin data) when present and otherwise reads the app's SNI
+  `Title` (watts) over the session bus with zbus. Also manages the app process
+  (launch / focus / restart / quit, including Hyprland's lua dispatcher). No
+  shelling out to busctl or dbus-send; the only external command is `hyprctl`
+  for window management.
 - **QML frontend** (`omarchy/`): a `bar-widget` plugin. `BarWidget.qml` runs
   `wireview-pro2-qs watch` once and updates from its JSON lines; `Panel.qml`
   shows status and app actions. All data collection stays in Rust; the QML is
@@ -91,6 +93,24 @@ omarchy plugin update luca.wireview-pro2
 omarchy plugin remove luca.wireview-pro2
 ```
 
+## Full sensor data (optional)
+
+The bar always shows watts. To also show per-pin voltage and current, the
+four temperature channels, fault status/log, and the PSU rating in the
+right-click panel, install the companion hwmon driver and daemon:
+
+```bash
+yay -S wireview-hwmon wireview-hwmon-dkms   # or: paru -S
+sudo modprobe wireview_hwmon
+sudo systemctl enable --now wireviewd
+```
+
+`wireviewd` reads the device over serial and exposes it as a `wireview` hwmon
+chip under `/sys/class/hwmon/`. The serial port is single-owner, so quit the
+WireView2 app before starting `wireviewd`, then relaunch it — the app switches
+to reading through hwmon, and the widget reads the same chip alongside it. The
+widget keeps the SNI-title fallback (watts only) when no chip is present.
+
 ## Usage
 
 - **Bar**: left-click opens the app window — launches it when not running,
@@ -99,8 +119,9 @@ omarchy plugin remove luca.wireview-pro2
   v1.2.0.0, so a hidden window cannot be revealed any other way).
   Right-click opens the details panel.
 - **Panel**: current power draw and app state, plus Open / Restart / Quit
-  actions. Enter opens the app window, Tab moves to the neighboring bar
-  panel, Esc closes.
+  actions. When the hwmon chip is present it also shows per-pin voltage and
+  current, temperatures, fault status/log, and the PSU rating. Enter opens
+  the app window, Tab moves to the neighboring bar panel, Esc closes.
 - **Shell**: `omarchy-shell shell summon luca.wireview-pro2 '{}'` opens the
   panel, `omarchy-shell shell hide luca.wireview-pro2` closes it.
 
