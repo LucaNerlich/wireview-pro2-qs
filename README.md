@@ -8,6 +8,8 @@ Omarchy Quattro bar widget showing the live GPU power draw from the
 
 <img width="464" height="180" alt="image" src="https://github.com/user-attachments/assets/9a9f600a-c641-4f4d-8816-bd1b347c47fc" />
 
+<img width="748" height="880" alt="image" src="https://github.com/user-attachments/assets/bf3cbef6-8f08-4ef5-b5cd-6ea2a6b7a4a0" />
+
 ## Why this exists
 
 The WireView2 app (Avalonia) publishes its power reading in the `Title`
