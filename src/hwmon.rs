@@ -1,0 +1,234 @@
+//! Read the WireView Pro II from the `wireview` hwmon chip.
+//!
+//! On Linux the wireview-linux project pairs the GUI with a headless
+//! `wireviewd` daemon that exposes the device as a standard hwmon chip under
+//! `/sys/class/hwmon/hwmon*/` (`name` == `wireview`). Reading it here gives
+//! the full per-pin electrical data (voltage/current for all six 12VHPWR
+//! pins), the four temperature channels, fault bitmasks, and the PSU rating —
+//! far more than the app's StatusNotifierItem `Title` (watts only).
+//!
+//! When the chip is absent (e.g. the GUI is talking to the device directly
+//! over the serial port, which is exclusive), callers fall back to the SNI
+//! title. The file layout and unit conversions mirror `HwmonDevice.cs`.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+/// Full sensor snapshot read from the `wireview` hwmon chip.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sensors {
+    /// Per-pin voltage for the six 12VHPWR power pins, in volts.
+    pub voltage_v: [f64; 6],
+    /// Per-pin current for the six 12VHPWR power pins, in amperes.
+    pub current_a: [f64; 6],
+    /// Sum of the per-pin currents, in amperes.
+    pub sum_current_a: f64,
+    /// Sum of per-pin voltage × current, in watts.
+    pub sum_power_w: f64,
+    /// Onboard intake temperature, in °C (`null` when not exposed).
+    pub temp_in_c: Option<f64>,
+    /// Onboard exhaust temperature, in °C (`null` when not exposed).
+    pub temp_out_c: Option<f64>,
+    /// External probe 1 temperature, in °C (`null` when not exposed).
+    pub ext1_c: Option<f64>,
+    /// External probe 2 temperature, in °C (`null` when not exposed).
+    pub ext2_c: Option<f64>,
+    /// Live fault status bitmask (`0` = no faults).
+    pub fault_status: u16,
+    /// Latched fault log bitmask (`0` = nothing logged).
+    pub fault_log: u16,
+    /// Rated PSU wattage selected on the device (`null` when not exposed).
+    pub psu_cap_w: Option<u16>,
+}
+
+/// The sysfs location of the WireView hwmon chip, or `None` when no daemon
+/// has registered one.
+pub fn find_chip(base: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(base).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("hwmon") {
+            continue;
+        }
+        let Ok(ident) = fs::read_to_string(path.join("name")) else {
+            continue;
+        };
+        if ident.trim().eq_ignore_ascii_case("wireview") {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Read every sensor file from a WireView hwmon chip. Returns `None` when the
+/// chip has no live reading yet (the daemon exposes `in0_input` as the gate).
+pub fn read_chip(chip: &Path) -> Option<Sensors> {
+    // The app gates "connected" on `in0_input`; treat its absence as "the
+    // daemon owns the device but is not feeding this chip right now".
+    read_i64(&chip.join("in0_input"))?;
+
+    let mut voltage_v = [0.0f64; 6];
+    let mut current_a = [0.0f64; 6];
+    for i in 0..6 {
+        voltage_v[i] = read_int_or(&chip.join(format!("in{i}_input")), 0) as f64 / 1000.0;
+        current_a[i] = read_int_or(&chip.join(format!("curr{}_input", i + 1)), 0) as f64 / 1000.0;
+    }
+
+    let sum_current_a = current_a.iter().sum();
+    let sum_power_w = voltage_v.iter().zip(&current_a).map(|(v, a)| v * a).sum();
+
+    Some(Sensors {
+        voltage_v,
+        current_a,
+        sum_current_a,
+        sum_power_w,
+        temp_in_c: read_milli(&chip.join("temp1_input")),
+        temp_out_c: read_milli(&chip.join("temp2_input")),
+        ext1_c: read_milli(&chip.join("temp3_input")),
+        ext2_c: read_milli(&chip.join("temp4_input")),
+        fault_status: read_int_or(&chip.join("fault_status_raw"), 0) as u16,
+        fault_log: read_int_or(&chip.join("fault_log_raw"), 0) as u16,
+        psu_cap_w: read_i64(&chip.join("psu_cap")).map(map_psu_cap),
+    })
+}
+
+/// Discover and read the WireView hwmon chip under `/sys/class/hwmon`.
+pub fn discover() -> Option<Sensors> {
+    find_chip(Path::new("/sys/class/hwmon")).and_then(|chip| read_chip(&chip))
+}
+
+/// The `psu_cap` sysfs value encodes the rated wattage as a small enum.
+fn map_psu_cap(value: i64) -> u16 {
+    match value {
+        0 => 600,
+        1 => 450,
+        2 => 300,
+        3 => 150,
+        _ => 0,
+    }
+}
+
+fn read_i64(path: &Path) -> Option<i64> {
+    fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+fn read_int_or(path: &Path, default: i64) -> i64 {
+    read_i64(path).unwrap_or(default)
+}
+
+/// Millidegree input (hwmon convention) to °C, `None` when absent/invalid.
+fn read_milli(path: &Path) -> Option<f64> {
+    read_i64(path).map(|v| v as f64 / 1000.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write(base: &Path, files: &[(&str, &str)]) {
+        fs::create_dir_all(base).unwrap();
+        for (name, content) in files {
+            fs::write(base.join(name), content).unwrap();
+        }
+    }
+
+    fn chip(base: &Path) -> PathBuf {
+        write(
+            &base.join("hwmon0"),
+            &[
+                ("name", "wireview\n"),
+                ("in0_input", "12050\n"),
+                ("in1_input", "12080\n"),
+                ("in2_input", "12020\n"),
+                ("in3_input", "12100\n"),
+                ("in4_input", "12040\n"),
+                ("in5_input", "12060\n"),
+                ("curr1_input", "1500\n"),
+                ("curr2_input", "1520\n"),
+                ("curr3_input", "1480\n"),
+                ("curr4_input", "1550\n"),
+                ("curr5_input", "1490\n"),
+                ("curr6_input", "1510\n"),
+                ("temp1_input", "34500\n"),
+                ("temp2_input", "41200\n"),
+                ("temp3_input", "27800\n"),
+                ("fault_status_raw", "0\n"),
+                ("fault_log_raw", "0\n"),
+                ("psu_cap", "0\n"),
+            ],
+        );
+        base.join("hwmon0")
+    }
+
+    #[test]
+    fn finds_wireview_chip_among_others() {
+        let base = std::env::temp_dir().join("wv-hwmon-find");
+        let _ = fs::remove_dir_all(&base);
+        write(&base.join("hwmon0"), &[("name", "coretemp\n")]);
+        write(&base.join("hwmon1"), &[("name", "wireview\n")]);
+        write(&base.join("hwmon2"), &[("name", "nvme\n")]);
+
+        assert_eq!(find_chip(&base), Some(base.join("hwmon1")));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn reads_and_converts_every_channel() {
+        let base = std::env::temp_dir().join("wv-hwmon-read");
+        let _ = fs::remove_dir_all(&base);
+        let chip = chip(&base);
+        let s = read_chip(&chip).unwrap();
+
+        assert!((s.voltage_v[0] - 12.05).abs() < 1e-9);
+        assert!((s.current_a[5] - 1.51).abs() < 1e-9);
+        assert!((s.sum_current_a - 9.05).abs() < 1e-9);
+        // 12.05*1.5 + 12.08*1.52 + 12.02*1.48 + 12.10*1.55 + 12.04*1.49 + 12.06*1.51
+        let expect_w =
+            12.05 * 1.5 + 12.08 * 1.52 + 12.02 * 1.48 + 12.10 * 1.55 + 12.04 * 1.49 + 12.06 * 1.51;
+        assert!((s.sum_power_w - expect_w).abs() < 1e-9);
+        assert_eq!(s.temp_in_c, Some(34.5));
+        assert_eq!(s.temp_out_c, Some(41.2));
+        assert_eq!(s.ext1_c, Some(27.8));
+        assert_eq!(s.ext2_c, None);
+        assert_eq!(s.fault_status, 0);
+        assert_eq!(s.fault_log, 0);
+        assert_eq!(s.psu_cap_w, Some(600));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn maps_psu_cap_enum() {
+        assert_eq!(map_psu_cap(0), 600);
+        assert_eq!(map_psu_cap(1), 450);
+        assert_eq!(map_psu_cap(2), 300);
+        assert_eq!(map_psu_cap(3), 150);
+        assert_eq!(map_psu_cap(7), 0);
+    }
+
+    #[test]
+    fn chip_without_reading_is_none() {
+        let base = std::env::temp_dir().join("wv-hwmon-empty");
+        let _ = fs::remove_dir_all(&base);
+        write(&base.join("hwmon0"), &[("name", "wireview\n")]);
+        assert_eq!(read_chip(&base.join("hwmon0")), None);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn serializes_camel_case() {
+        let base = std::env::temp_dir().join("wv-hwmon-json");
+        let _ = fs::remove_dir_all(&base);
+        let s = read_chip(&chip(&base)).unwrap();
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["voltageV"][0], 12.05);
+        assert_eq!(json["sumCurrentA"], 9.05);
+        assert_eq!(json["sumPowerW"], json["sumPowerW"]);
+        assert!(json["ext2C"].is_null());
+        assert_eq!(json["psuCapW"], 600);
+        let _ = fs::remove_dir_all(&base);
+    }
+}

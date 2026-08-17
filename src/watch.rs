@@ -4,7 +4,10 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::Duration;
 
-use crate::{sni, status::Status};
+use crate::{
+    current, sni,
+    status::{State, Status},
+};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
@@ -16,19 +19,12 @@ pub fn watch() {
     let mut consecutive_misses: u32 = 0;
 
     loop {
-        let status = match &connection {
-            Some(conn) => match sni::current_status(conn) {
-                Some(status) => {
-                    consecutive_misses = 0;
-                    status
-                }
-                None => {
-                    consecutive_misses += 1;
-                    Status::off()
-                }
-            },
-            None => Status::off(),
-        };
+        let status = current::current_status(connection.as_ref());
+        if status.state == State::Off {
+            consecutive_misses += 1;
+        } else {
+            consecutive_misses = 0;
+        }
 
         if last.as_ref() != Some(&status) {
             let mut stdout = io::stdout().lock();
@@ -50,8 +46,9 @@ pub fn watch() {
 
         thread::sleep(POLL_INTERVAL);
 
-        // Missing reads usually mean the app is gone, but a run of them can
-        // also mean the bus connection died; reconnect then.
+        // A run of misses usually means the app is gone, but it can also
+        // mean the session bus died; reconnect then. hwmon-only mode does not
+        // need the bus, but reconnecting is cheap and harmless.
         if connection.is_none() || consecutive_misses >= 3 {
             if let Some(conn) = connection.take() {
                 let _ = conn.close();

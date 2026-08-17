@@ -6,7 +6,7 @@
 
 use clap::{Parser, Subcommand};
 
-use wireview_pro2_qs::{open, sni, status::Status, watch};
+use wireview_pro2_qs::{current, open, sni, watch};
 
 #[derive(Parser)]
 #[command(
@@ -40,10 +40,7 @@ fn main() {
     match Cli::parse().command {
         Command::Status => {
             let connection = sni::session().ok();
-            let status = connection
-                .as_ref()
-                .and_then(sni::current_status)
-                .unwrap_or_else(Status::off);
+            let status = current::current_status(connection.as_ref());
             println!(
                 "{}",
                 serde_json::to_string(&status).expect("status serializes")

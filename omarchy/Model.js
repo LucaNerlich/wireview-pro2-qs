@@ -22,7 +22,8 @@ function parseLine(line) {
   return {
     state: state,
     watts: state === "live" ? watts : NaN,
-    title: typeof parsed.title === "string" ? parsed.title : ""
+    title: typeof parsed.title === "string" ? parsed.title : "",
+    sensors: parsed.sensors || null
   };
 }
 
@@ -54,6 +55,38 @@ function stateLine(status) {
   return "App not running";
 }
 
+// True when the backend supplied a full hwmon sensor snapshot.
+function hasSensors(status) {
+  var s = status && status.sensors;
+  return !!s && typeof s === "object"
+    && Array.isArray(s.voltageV) && Array.isArray(s.currentA);
+}
+
+function fmt(value, digits) {
+  if (value === null || value === undefined) return "\u2014";
+  var n = Number(value);
+  if (!isFinite(n)) return "\u2014";
+  var factor = Math.pow(10, digits || 0);
+  return String(Math.round(n * factor) / factor);
+}
+
+function fmtTemp(c) {
+  if (c === null || c === undefined) return "\u2014";
+  var n = Number(c);
+  if (!isFinite(n)) return "\u2014";
+  return fmt(n, 1) + " \u00B0C";
+}
+
+function fmtFault(bits) {
+  if (bits === null || bits === undefined) return "none";
+  var n = Number(bits);
+  if (!isFinite(n) || n === 0) return "none";
+  return "0x" + n.toString(16).toUpperCase().padStart(4, "0");
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { parseLine, formatWatts, labelText, tooltipText, stateLine };
+  module.exports = {
+    parseLine, formatWatts, labelText, tooltipText, stateLine,
+    hasSensors, fmt, fmtTemp, fmtFault
+  };
 }

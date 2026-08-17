@@ -29,13 +29,16 @@ Panel {
   readonly property string statusState: hasWatcher ? String(watcher.statusState || "off") : "off"
   readonly property real watts: hasWatcher ? Number(watcher.watts) : NaN
   readonly property string title: hasWatcher ? String(watcher.title || "") : ""
+  readonly property var sensors: hasWatcher ? (watcher.sensors || null) : null
 
   readonly property var status: ({
     state: root.statusState,
     watts: root.watts,
-    title: root.title
+    title: root.title,
+    sensors: root.sensors
   })
   readonly property string stateLine: Model.stateLine(status)
+  readonly property bool hasSensors: Model.hasSensors(status)
 
   function runAction(action) {
     if (!hasWatcher || typeof watcher.runAction !== "function") return
@@ -164,6 +167,244 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
             font.bold: true
+          }
+        }
+      }
+
+      // Only instantiated when the backend read the hwmon chip, so the
+      // bindings below never evaluate a null sensors object.
+      Loader {
+        width: parent.width
+        active: root.hasSensors
+        sourceComponent: sensorsSection
+      }
+    }
+  }
+
+  Component {
+    id: sensorsSection
+
+    Column {
+      width: parent.width
+      spacing: Style.space(8)
+
+      Text {
+        text: "Sensors"
+        color: Qt.darker(root.foreground, 1.5)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Row {
+        width: parent.width
+        spacing: Style.space(10)
+
+        Column {
+          width: (parent.width - parent.spacing) / 2
+          spacing: Style.space(2)
+
+          Text {
+            text: "Total current"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmt(root.sensors.sumCurrentA, 2) + " A"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+          }
+        }
+
+        Column {
+          width: (parent.width - parent.spacing) / 2
+          spacing: Style.space(2)
+
+          Text {
+            text: "PSU rating"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmt(root.sensors.psuCapW, 0) + " W"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+          }
+        }
+      }
+
+      Row {
+        width: parent.width
+        spacing: Style.space(10)
+
+        Column {
+          width: (parent.width - 3 * parent.spacing) / 4
+          spacing: Style.space(2)
+
+          Text {
+            text: "Temp in"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmtTemp(root.sensors.tempInC)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+        }
+
+        Column {
+          width: (parent.width - 3 * parent.spacing) / 4
+          spacing: Style.space(2)
+
+          Text {
+            text: "Temp out"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmtTemp(root.sensors.tempOutC)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+        }
+
+        Column {
+          width: (parent.width - 3 * parent.spacing) / 4
+          spacing: Style.space(2)
+
+          Text {
+            text: "Ext 1"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmtTemp(root.sensors.ext1C)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+        }
+
+        Column {
+          width: (parent.width - 3 * parent.spacing) / 4
+          spacing: Style.space(2)
+
+          Text {
+            text: "Ext 2"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmtTemp(root.sensors.ext2C)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+        }
+      }
+
+      Row {
+        width: parent.width
+        spacing: Style.space(10)
+
+        Column {
+          width: (parent.width - parent.spacing) / 2
+          spacing: Style.space(2)
+
+          Text {
+            text: "Fault status"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmtFault(root.sensors.faultStatus)
+            color: root.sensors.faultStatus ? root.urgent : root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+        }
+
+        Column {
+          width: (parent.width - parent.spacing) / 2
+          spacing: Style.space(2)
+
+          Text {
+            text: "Fault log"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmtFault(root.sensors.faultLog)
+            color: root.sensors.faultLog ? root.urgent : root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.space(2)
+
+        Text {
+          text: "12VHPWR pins"
+          color: Qt.darker(root.foreground, 1.5)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        Repeater {
+          model: 6
+
+          delegate: Row {
+            width: parent.width
+            spacing: 0
+
+            Text {
+              width: parent.width * 0.3
+              text: "Pin " + (index + 1)
+              color: Qt.darker(root.foreground, 1.5)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              width: parent.width * 0.35
+              text: Model.fmt(root.sensors.voltageV[index], 3) + " V"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+
+            Text {
+              width: parent.width * 0.35
+              text: Model.fmt(root.sensors.currentA[index], 3) + " A"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
           }
         }
       }

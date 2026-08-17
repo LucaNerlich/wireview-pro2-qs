@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::hwmon::Sensors;
+
 /// The rendered state of the WireView Pro II.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -20,6 +22,10 @@ pub struct Status {
     pub watts: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Full per-pin/temperature/fault data, present only when read from the
+    /// `wireview` hwmon chip rather than the app's SNI title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sensors: Option<Sensors>,
 }
 
 impl Status {
@@ -28,6 +34,18 @@ impl Status {
             state: State::Off,
             watts: None,
             title: None,
+            sensors: None,
+        }
+    }
+
+    /// Build a live status from a hwmon sensor snapshot.
+    pub fn from_sensors(sensors: &Sensors) -> Self {
+        let watts = sensors.sum_power_w;
+        Self {
+            state: State::Live,
+            watts: Some(watts),
+            title: Some(format!("WireView Pro II - {watts:.1} W")),
+            sensors: Some(sensors.clone()),
         }
     }
 
@@ -48,6 +66,7 @@ impl Status {
                             state: State::Live,
                             watts: Some(watts),
                             title: Some(title.to_string()),
+                            sensors: None,
                         });
                     }
                 }
@@ -59,6 +78,7 @@ impl Status {
                 state: State::Na,
                 watts: None,
                 title: Some(title.to_string()),
+                sensors: None,
             });
         }
 
@@ -134,5 +154,34 @@ mod tests {
     fn serializes_off_without_optional_fields() {
         let json = serde_json::to_string(&Status::off()).unwrap();
         assert_eq!(json, r#"{"state":"off"}"#);
+    }
+
+    #[test]
+    fn from_sensors_builds_live_status_with_sensors() {
+        let sensors = crate::hwmon::Sensors {
+            voltage_v: [12.0; 6],
+            current_a: [1.5; 6],
+            sum_current_a: 9.0,
+            sum_power_w: 108.0,
+            temp_in_c: Some(34.5),
+            temp_out_c: None,
+            ext1_c: None,
+            ext2_c: None,
+            fault_status: 0,
+            fault_log: 1,
+            psu_cap_w: Some(600),
+        };
+        let s = Status::from_sensors(&sensors);
+        assert_eq!(s.state, State::Live);
+        assert_eq!(s.watts, Some(108.0));
+
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["state"], "live");
+        assert_eq!(json["watts"], 108.0);
+        assert_eq!(json["sensors"]["sumPowerW"], 108.0);
+        assert_eq!(json["sensors"]["tempInC"], 34.5);
+        assert!(json["sensors"]["tempOutC"].is_null());
+        assert_eq!(json["sensors"]["faultLog"], 1);
+        assert_eq!(json["sensors"]["psuCapW"], 600);
     }
 }

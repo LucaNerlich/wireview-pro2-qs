@@ -8,6 +8,8 @@
 //! the app's process lifecycle for the QML frontend.
 
 pub mod app;
+pub mod current;
+pub mod hwmon;
 pub mod open;
 pub mod sni;
 pub mod status;

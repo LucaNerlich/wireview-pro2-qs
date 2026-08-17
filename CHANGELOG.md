@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Read the full per-pin sensor data from the `wireview` hwmon chip when the
+  WireView daemon exposes one: voltage and current for all six 12VHPWR pins,
+  the four temperature channels, fault status/log, and the PSU rating. The
+  right-click panel shows these when available, and falls back to the app's
+  SNI title (watts only) otherwise.
+
 ## [1.0.1] - 2026-08-17
 
 ### Changed

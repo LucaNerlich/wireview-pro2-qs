@@ -47,12 +47,14 @@ BarWidget {
   property string statusState: "off"
   property real watts: NaN
   property string title: ""
+  property var sensors: null
 
   readonly property bool hideWhenOff: setting("hideWhenOff", false) === true
   readonly property var status: ({
     state: root.statusState,
     watts: root.watts,
-    title: root.title
+    title: root.title,
+    sensors: root.sensors
   })
   readonly property string labelText: Model.labelText(status)
   readonly property string tooltipText: Model.tooltipText(status)
@@ -67,6 +69,7 @@ BarWidget {
     root.statusState = parsed.state
     root.watts = parsed.state === "live" ? parsed.watts : NaN
     root.title = parsed.title
+    root.sensors = parsed.sensors || null
   }
 
   function runAction(action) {
