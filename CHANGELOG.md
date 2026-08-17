@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-08-17
 
 ### Added
 
@@ -92,6 +92,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.1.0]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v1.0.0
 [0.2.0]: https://github.com/LucaNerlich/wireview-pro2-qs/releases/tag/v0.2.0
