@@ -1,7 +1,7 @@
 PREFIX ?= /usr/local
 CARGO ?= cargo
 
-.PHONY: build install uninstall test plugin-test validate fmt clippy bundle verify-bundle clean
+.PHONY: build install uninstall test plugin-test validate fmt clippy bundle verify-bundle package-release clean
 
 build:
 	$(CARGO) build --release
@@ -17,6 +17,9 @@ bundle:
 
 verify-bundle:
 	scripts/verify-bundle.sh
+
+package-release:
+	scripts/package-release.sh
 
 test:
 	$(CARGO) test --all-targets

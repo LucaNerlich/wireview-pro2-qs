@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `make verify-bundle` now also requires the committed ELF to be non-stripped,
+  to match its recorded SHA-256, and to report the same version as
+  `Cargo.toml` / `manifest.json`. Pushing a `v*.*.*` tag re-runs those checks
+  and only then publishes the GitHub Release, so a later release cannot skip
+  the marketplace attestation.
+
 ## [1.1.2] - 2026-08-19
 
 ### Fixed

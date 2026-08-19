@@ -28,4 +28,6 @@ zbus = { version = "5", features = ["blocking"] }
 [profile.release]
 lto = "thin"
 codegen-units = 1
+# Keep the symbol table. Marketplace review inspects this ELF with `nm`;
+# `strip = true` or `"symbols"` is a listing rejection.
 strip = "debuginfo"
