@@ -28,7 +28,7 @@ This widget reads the item over DBus directly and takes the tray icon's place.
 
 ## Requirements
 
-- **The WireView2 app** (`wireview-linux-bin` on AUR) — provides the
+- **The WireView2 app** (`wireview-linux`) — provides the
   Open / Restart / Quit actions and the wattage-only fallback. Install it to
   control the app; without it the widget shows `⚡ off` and the open action
   has nothing to launch. https://github.com/emaspa/wireview-linux
@@ -77,14 +77,7 @@ machine-specific paths are remapped, and the expected SHA-256 is recorded in
 exact checkout with `make verify-bundle`; CI fails the build if the committed
 binary ever drifts from the tracked source. If the bundled binary cannot
 start — non-x86_64 machine, missing exec bit, whatever — the widget falls
-back to a `wireview-pro2-qs` binary on PATH, so these still work:
-
-```bash
-# Binary (pick one)
-cargo install wireview-pro2-qs            # from crates.io
-yay -S wireview-pro2-qs                   # AUR source build
-yay -S wireview-pro2-qs-bin               # AUR prebuilt binary
-```
+back to a `wireview-pro2-qs` binary on PATH (`cargo install wireview-pro2-qs`).
 
 Omarchy clones the plugin into `~/.config/omarchy/plugins/` and adds the
 widget to the bar (right section by default). Update or remove it with the

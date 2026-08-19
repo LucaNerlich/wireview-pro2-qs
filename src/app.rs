@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// How the app is launched on this system (wireview-linux-bin AUR package).
+/// Path of the WireView2 app binary this widget launches and monitors.
 pub const APP_BINARY: &str = "/usr/bin/wireview-linux";
 
 /// True when `cmdline` belongs to the WireView app: the process must have
