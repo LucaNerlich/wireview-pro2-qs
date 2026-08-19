@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-08-19
+
 ### Fixed
 
-- Refresh the bundled backend so it matches the tracked source. The
-  AUR-removal commit only changed a comment in `src/app.rs`, but rustc
-  still hashes comments into symbol names, so marketplace review's rebuild
-  at that SHA no longer matched the leftover v1.1.4 ELF.
+- Rebuild the bundled musl backend so it matches the tracked source. A
+  comment-only edit of `src/app.rs` left the v1.1.4 ELF in place; rustc
+  hashes comments into symbol names, so marketplace review's exact-SHA
+  rebuild diverged.
 
 ### Changed
 
@@ -146,6 +148,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.1.5]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.1...v1.1.2
