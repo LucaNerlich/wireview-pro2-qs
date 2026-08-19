@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Refresh the bundled backend so it matches the tracked source. The
+  AUR-removal commit only changed a comment in `src/app.rs`, but rustc
+  still hashes comments into symbol names, so marketplace review's rebuild
+  at that SHA no longer matched the leftover v1.1.4 ELF.
+
+### Changed
+
+- `make verify-bundle` now fingerprints `src/`, `Cargo.toml`, `Cargo.lock`,
+  and `rust-toolchain.toml` (`omarchy/bin/wireview-pro2-qs.srcid`) so a
+  stale bundle fails before the musl rebuild. Comments count.
+
 ### Removed
 
 - AUR PKGBUILD templates and install instructions. This project is not

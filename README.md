@@ -165,12 +165,21 @@ qmllint -I "$OMARCHY_PATH/shell" omarchy/BarWidget.qml omarchy/Panel.qml
 `make verify-bundle` is the marketplace gate: the committed ELF must be
 non-stripped (`nm` can map symbols to the Rust source), its SHA-256 file
 must match the bytes in git, `--version` must match `Cargo.toml` /
-`manifest.json`, and a fresh musl rebuild must be byte-identical (needs
-`rustup target add x86_64-unknown-linux-musl`). The toolchain is pinned in
-`rust-toolchain.toml` (including rustfmt and clippy). CI runs the format
-check and this verify as independent jobs so a missing rustfmt component
-cannot skip the attestation. Pushing a `vX.Y.Z` tag re-runs the same
-script and publishes the GitHub Release tarball only if it passes.
+`manifest.json`, the `.srcid` fingerprint must match `src/` + `Cargo.toml` +
+`Cargo.lock` + `rust-toolchain.toml`, and a fresh musl rebuild must be
+byte-identical (needs `rustup target add x86_64-unknown-linux-musl`). The
+toolchain is pinned in `rust-toolchain.toml` (including rustfmt and clippy).
+CI runs the format check and this verify as independent jobs so a missing
+rustfmt component cannot skip the attestation. Pushing a `vX.Y.Z` tag
+re-runs the same script and publishes the GitHub Release tarball only if it
+passes.
+
+Any edit under `src/`, `Cargo.toml`, `Cargo.lock`, or `rust-toolchain.toml`
+changes the ELF — including comments. rustc hashes this crate's source into
+symbol names (the crate disambiguator), so a leftover binary from an earlier
+commit fails marketplace review's exact-SHA rebuild. Run `make bundle` in
+the same change as the Rust edit; do not merge while the marketplace bundle
+job is red.
 
 ### Releasing
 
