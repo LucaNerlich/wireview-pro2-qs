@@ -28,10 +28,7 @@ const TERMINATE_TIMEOUT: Duration = Duration::from_secs(3);
 const FRESH_INSTANCE_AGE: Duration = Duration::from_secs(5);
 
 fn terminate_all() {
-    let pids = app::running_pids();
-    if !pids.is_empty() {
-        app::terminate(&pids, TERMINATE_TIMEOUT);
-    }
+    app::terminate_running(TERMINATE_TIMEOUT);
 }
 
 /// Clock ticks per second from `sysconf(_SC_CLK_TCK)`, with the ubiquitous
