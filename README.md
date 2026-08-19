@@ -169,12 +169,26 @@ qmllint -I "$OMARCHY_PATH/shell" omarchy/BarWidget.qml omarchy/Panel.qml
 ```
 
 `make bundle` rebuilds the statically linked backend into `omarchy/bin/` and
-`make verify-bundle` checks that the committed binary is byte-identical to a
-fresh reproducible build (both need the `x86_64-unknown-linux-musl` target:
+`make verify-bundle` is the marketplace gate: the committed ELF must be
+non-stripped (`nm` can map symbols to the Rust source), its SHA-256 file
+must match the bytes in git, `--version` must match `Cargo.toml` /
+`manifest.json`, and a fresh musl rebuild must be byte-identical (needs
 `rustup target add x86_64-unknown-linux-musl`). The toolchain is pinned in
 `rust-toolchain.toml` (including rustfmt and clippy). CI runs the format
-check and the bundle verify as independent jobs so a missing rustfmt
-component cannot skip the reproducibility attestation.
+check and this verify as independent jobs so a missing rustfmt component
+cannot skip the attestation. Pushing a `vX.Y.Z` tag re-runs the same
+script and publishes the GitHub Release tarball only if it passes.
+
+### Releasing
+
+1. Bump `Cargo.toml`, `Cargo.lock`, `manifest.json`, and `CHANGELOG.md`.
+2. Run `make bundle` then `make verify-bundle`.
+3. Open a PR and wait until the **marketplace bundle** CI job is green on
+   that SHA. Do not tag a commit where that job was skipped or failed.
+4. Merge, then tag `vX.Y.Z` on the merged commit (the tag must match the
+   crate version). The Release workflow repeats the bundle checks and
+   publishes `wireview-pro2-qs-X.Y.Z-linux-x86_64.tar.gz` from the
+   committed ELF.
 
 Saving files under an installed user plugin triggers Quattro's plugin hot
 reload. Rerun `omarchy plugin validate .` after changing the manifest or
