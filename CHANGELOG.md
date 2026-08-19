@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- CI installs rustfmt and clippy on the pinned 1.97.1 toolchain so the format
+  check can actually run, and the bundle reproducibility job no longer depends
+  on that check. A style-tooling failure can no longer skip the byte-for-byte
+  verify that marketplace review requires.
+
 ## [1.1.1] - 2026-08-17
 
 ### Changed

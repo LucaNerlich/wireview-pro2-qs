@@ -172,7 +172,9 @@ qmllint -I "$OMARCHY_PATH/shell" omarchy/BarWidget.qml omarchy/Panel.qml
 `make verify-bundle` checks that the committed binary is byte-identical to a
 fresh reproducible build (both need the `x86_64-unknown-linux-musl` target:
 `rustup target add x86_64-unknown-linux-musl`). The toolchain is pinned in
-`rust-toolchain.toml`, and CI verifies the bundle instead of regenerating it.
+`rust-toolchain.toml` (including rustfmt and clippy). CI runs the format
+check and the bundle verify as independent jobs so a missing rustfmt
+component cannot skip the reproducibility attestation.
 
 Saving files under an installed user plugin triggers Quattro's plugin hot
 reload. Rerun `omarchy plugin validate .` after changing the manifest or
