@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- AUR PKGBUILD templates and install instructions. This project is not
+  published to the AUR; install via `omarchy plugin add`.
+
 ## [1.1.4] - 2026-08-19
 
 ### Fixed

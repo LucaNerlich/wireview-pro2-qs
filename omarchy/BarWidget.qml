@@ -13,12 +13,11 @@ BarWidget {
   moduleName: "luca.wireview-pro2"
 
   // The plugin bundles a statically linked x86_64 backend next to this file.
-  // Each process keeps its own binary choice: the bundled one first, a PATH
-  // install ("wireview-pro2-qs", crates.io or AUR) as fallback. A single
-  // transient spawn failure must not abandon the bundle, so the choice only
-  // flips after repeated consecutive failures — and it flips back, so a
-  // restored bundle (e.g. after `omarchy plugin update`) is picked up
-  // without a shell restart.
+  // Each process keeps its own binary choice: the bundled one first, then a
+  // `wireview-pro2-qs` binary on PATH. A single transient spawn failure must
+  // not abandon the bundle, so the choice only flips after repeated
+  // consecutive failures — and it flips back, so a restored bundle (e.g.
+  // after `omarchy plugin update`) is picked up without a shell restart.
   function decodeFileUrl(urlString) {
     // resolvedUrl keeps percent-encoding intact, which QProcess would then
     // treat as part of the file name; decode it so install paths containing
