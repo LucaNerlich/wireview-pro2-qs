@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `restart` and `quit` re-verify process identity and starttime before the
+  initial SIGTERM (not only before SIGKILL), so a recycled pid cannot
+  terminate an unrelated same-user process.
+
 ## [1.1.3] - 2026-08-19
 
 ### Changed
