@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-08-19
+
 ### Changed
 
 - `make verify-bundle` now also requires the committed ELF to be non-stripped,
@@ -118,6 +120,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.1.3]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.0.1...v1.1.0
