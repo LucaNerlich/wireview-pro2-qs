@@ -67,7 +67,9 @@ jobs:
       - uses: actions/checkout@v4
 
       # Inspect before installing the pinned toolchain so a rustup failure
-      # cannot skip the non-stripped / recorded-hash attestation.
+      # cannot skip the non-stripped / recorded-hash / source-id attestation.
+      # The source-id check catches a leftover ELF after a comment-only Rust
+      # edit without waiting for the musl rebuild.
       - name: Inspect committed ELF
         run: VERIFY_BUNDLE_SKIP_REBUILD=1 scripts/verify-bundle.sh
 

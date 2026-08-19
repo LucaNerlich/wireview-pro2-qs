@@ -25,7 +25,10 @@ install -Dm755 "$out" "$repo_root/omarchy/bin/wireview-pro2-qs"
 (
   cd "$repo_root/omarchy/bin"
   sha256sum wireview-pro2-qs > wireview-pro2-qs.sha256
+  srcid="$("$repo_root/scripts/bundle-source-id.sh")"
+  printf '%s  src Cargo.toml Cargo.lock rust-toolchain.toml\n' "$srcid" > wireview-pro2-qs.srcid
 )
 
 echo "bundled: omarchy/bin/wireview-pro2-qs"
 sha256sum "$repo_root/omarchy/bin/wireview-pro2-qs"
+echo "source-id: $(awk '{print $1}' "$repo_root/omarchy/bin/wireview-pro2-qs.srcid")"

@@ -3,9 +3,11 @@
 #
 # Reviewers bind approval to an exact SHA. At that SHA the committed ELF must
 # be inspectable with `nm` (not stripped), its recorded hash must match the
-# bytes in git, and a fresh pinned rebuild must be byte-identical. This script
-# is the single gate used by CI and by the tag-release workflow so a later
-# release cannot skip any of those attestations.
+# bytes in git, its source fingerprint must match src/ + Cargo.* + the
+# toolchain pin (comments count), and a fresh pinned rebuild must be
+# byte-identical. This script is the single gate used by CI and by the
+# tag-release workflow so a later release cannot skip any of those
+# attestations.
 #
 # Usage: scripts/verify-bundle.sh
 set -euo pipefail
@@ -15,6 +17,7 @@ cargo_home="${CARGO_HOME:-$HOME/.cargo}"
 target="x86_64-unknown-linux-musl"
 bin="$repo_root/omarchy/bin/wireview-pro2-qs"
 expected_file="$repo_root/omarchy/bin/wireview-pro2-qs.sha256"
+srcid_file="$repo_root/omarchy/bin/wireview-pro2-qs.srcid"
 
 fail() {
   echo "verify-bundle: $*" >&2
@@ -36,7 +39,27 @@ if [[ "$committed" != "$expected" ]]; then
   fail "committed ELF does not match the recorded hash
   recorded:  $expected
   committed: $committed
-Run 'scripts/build-bundle.sh' and commit both the binary and the .sha256 file."
+Run 'scripts/build-bundle.sh' and commit the binary, .sha256, and .srcid."
+fi
+
+# Catch a stale bundle before the musl rebuild. rustc embeds a crate
+# disambiguator (a hash of this crate's source) in symbol names, so even a
+# comment-only edit of src/*.rs changes the ELF. Marketplace review then
+# rebuilds at that SHA and rejects the leftover binary.
+[[ -f "$srcid_file" ]] || fail "missing $srcid_file
+Run 'scripts/build-bundle.sh' and commit the binary, .sha256, and .srcid."
+recorded_srcid="$(awk '{print $1}' "$srcid_file")"
+[[ ${#recorded_srcid} -eq 64 ]] || fail "recorded source id in $srcid_file is not a SHA-256"
+actual_srcid="$("$repo_root/scripts/bundle-source-id.sh")"
+if [[ "$recorded_srcid" != "$actual_srcid" ]]; then
+  fail "committed ELF is stale relative to the tracked Rust source
+  recorded source id: $recorded_srcid
+  current source id:  $actual_srcid
+
+Comments, docs, and whitespace in src/*.rs all count: rustc hashes them
+into symbol names (the crate disambiguator). Run 'scripts/build-bundle.sh'
+and commit omarchy/bin/wireview-pro2-qs, .sha256, and .srcid in the same
+change as the Rust edit."
 fi
 
 file_out="$(file -b "$bin")"
@@ -80,7 +103,7 @@ if [[ "${GITHUB_REF_TYPE:-}" == tag ]]; then
 fi
 
 if [[ "${VERIFY_BUNDLE_SKIP_REBUILD:-}" == 1 ]]; then
-  echo "verified: omarchy/bin/wireview-pro2-qs is non-stripped, version $crate_version, hash $committed (rebuild skipped)"
+  echo "verified: omarchy/bin/wireview-pro2-qs is non-stripped, version $crate_version, hash $committed, source id $actual_srcid (rebuild skipped)"
   exit 0
 fi
 
@@ -101,7 +124,10 @@ if [[ "$expected" != "$actual" ]]; then
   fail "bundled binary does not match the reproducible build of the tracked source
   expected: $expected
   actual:   $actual
-Run 'scripts/build-bundle.sh' to regenerate the bundle, then commit it."
+
+The source fingerprint matches, so this is a toolchain/flags drift rather
+than a forgotten rebuild. Run 'scripts/build-bundle.sh' with the pinned
+1.97.1 musl toolchain and commit the result."
 fi
 
 echo "verified: omarchy/bin/wireview-pro2-qs is non-stripped, version $crate_version, and matches the reproducible build ($actual)"
