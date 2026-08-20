@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-20
+
+### Added
+
+- Status reports `appRunning` separately from the device reading, so a live
+  hwmon chip no longer pretends the WireView2 GUI is running. The panel App
+  row shows "daemon only" in that case, Restart/Quit hide until the GUI is
+  up, and `hideWhenOff` keys off the GUI process.
+- Named fault labels (matching wireview-linux: chip/sensor over-temp, OCP,
+  wire OCP, OPP, current imbalance) instead of raw hex. Hex remains as a
+  caption. The bar uses the urgent color while a live fault is set.
+- Critical `omarchy.notifications` toasts (via `omarchy-notification-send`)
+  when a live fault appears or the pin-imbalance heuristic trips. The same
+  condition is not re-sent every poll; clicking the toast summons the panel.
+- Per-pin watts, a current-imbalance caption (firmware v03: ≥6 A and >40%
+  spread), and fan duty / average voltage in the details panel.
+
+### Changed
+
+- hwmon totals prefer the chip's `curr7_input` / `power1_input` when present,
+  falling back to summing the six pins.
+- `appRunning` is observed through the same pidfd identify path as terminate
+  and never signals, so the 1 Hz watch poll cannot resurrect the pid-reuse
+  kill races closed in v1.1.4 / v1.1.6.
+
 ## [1.1.6] - 2026-08-20
 
 ### Fixed
@@ -166,6 +191,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.2.0]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.6...v1.2.0
 [1.1.6]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.3...v1.1.4

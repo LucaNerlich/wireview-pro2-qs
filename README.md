@@ -1,6 +1,7 @@
 # wireview-pro2-qs
 
 [![GitHub Release](https://img.shields.io/github/v/release/LucaNerlich/wireview-pro2-qs)](https://github.com/LucaNerlich/wireview-pro2-qs/releases)
+[Omarchy marketplace](https://omarchyplugins.com/plugin.html?id=luca.wireview-pro2)
 
 Omarchy Quattro bar widget showing the live GPU power draw from the
 [Thermal Grizzly WireView Pro II](https://www.thermal-grizzly.com/en/wireview-pro-ii-gpu/s-tg-wv-p2)
@@ -41,8 +42,10 @@ This widget reads the item over DBus directly and takes the tray icon's place.
 - **Rust backend** (`wireview-pro2-qs` binary): prefers the `wireview` hwmon
   chip (full per-pin data) when present and otherwise reads the app's SNI
   `Title` (watts) over the session bus with zbus. Also manages the app process
-  (launch / focus / restart / quit, including Hyprland's lua dispatcher). No
-  shelling out to busctl or dbus-send; the only external command is `hyprctl`
+  (launch / focus / restart / quit, including Hyprland's lua dispatcher). The
+  JSON status reports `appRunning` independently of the device reading, so the
+  widget can show live watts from `wireviewd` without claiming the GUI is up.
+  No shelling out to busctl or dbus-send; the only external command is `hyprctl`
   for window management.
 - **QML frontend** (`omarchy/`): a `bar-widget` plugin. `BarWidget.qml` runs
   `wireview-pro2-qs watch` once and updates from its JSON lines; `Panel.qml`
@@ -90,9 +93,10 @@ omarchy plugin remove luca.wireview-pro2
 
 ## Full sensor data (optional)
 
-The bar always shows watts. To also show per-pin voltage and current, the
-four temperature channels, fault status/log, and the PSU rating in the
-right-click panel, install the companion hwmon driver and daemon:
+The bar always shows watts. To also show per-pin voltage, current, and power,
+fan duty, the four temperature channels, named fault status/log, current
+imbalance, and the PSU rating in the right-click panel, install the companion
+hwmon driver and daemon:
 
 ```bash
 yay -S wireview-hwmon wireview-hwmon-dkms   # or: paru -S
@@ -104,7 +108,10 @@ sudo systemctl enable --now wireviewd
 chip under `/sys/class/hwmon/`. The serial port is single-owner, so quit the
 WireView2 app before starting `wireviewd`, then relaunch it — the app switches
 to reading through hwmon, and the widget reads the same chip alongside it. The
-widget keeps the SNI-title fallback (watts only) when no chip is present.
+widget also works **without the GUI**: if only `wireviewd` is running the bar
+still shows live watts, the panel App row reads "daemon only", and Open launches
+the app. The widget keeps the SNI-title fallback (watts only) when no chip is
+present.
 
 ## Usage
 
@@ -113,10 +120,15 @@ widget keeps the SNI-title fallback (watts only) when no chip is present.
   windowless (the app has no SNI `Activate` method and an empty dbusmenu in
   v1.2.0.0, so a hidden window cannot be revealed any other way).
   Right-click opens the details panel.
-- **Panel**: current power draw and app state, plus Open / Restart / Quit
-  actions. When the hwmon chip is present it also shows per-pin voltage and
-  current, temperatures, fault status/log, and the PSU rating. Enter opens
-  the app window, Tab moves to the neighboring bar panel, Esc closes.
+- **Panel**: current power draw and app state (running, daemon only, or not
+  running), plus Open / Restart / Quit. Restart and Quit hide when the GUI is
+  not running. When the hwmon chip is present the panel also shows per-pin
+  voltage, current, and watts, an imbalance caption (highlighting the hottest
+  pin when a pin is ≥6 A and the spread exceeds 40%), fan duty, temperatures,
+  named fault status/log, and the PSU rating. A live fault paints the bar in
+  the urgent color and sends a critical Omarchy notification (click it to
+  open this panel). Enter opens the app window, Tab moves to the neighboring
+  bar panel, Esc closes.
 - **Shell**: `omarchy-shell shell summon luca.wireview-pro2 '{}'` opens the
   panel, `omarchy-shell shell hide luca.wireview-pro2` closes it.
 
@@ -130,7 +142,7 @@ omarchy bar set luca.wireview-pro2 hideWhenOff true
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `hideWhenOff` | false | Hide the widget entirely when the app is not running. |
+| `hideWhenOff` | false | Hide the widget entirely when the WireView2 GUI is not running, even if `wireviewd` is still feeding the hwmon chip. |
 
 ## CLI
 
@@ -145,9 +157,10 @@ wireview-pro2-qs quit      # kill every instance
 Status lines:
 
 ```json
-{"state":"live","watts":43.2,"title":"WireView Pro II - 43.2 W"}
-{"state":"na","title":"WireView Pro II"}
-{"state":"off"}
+{"state":"live","watts":43.2,"appRunning":true,"title":"WireView Pro II - 43.2 W"}
+{"state":"live","watts":108.05,"appRunning":false,"sensors":{"voltageV":[12.0,12.1],"currentA":[1.5,1.6],"powerW":[18.0,19.36],"sumCurrentA":3.1,"sumPowerW":108.05,"tempInC":34.5,"tempOutC":null,"ext1C":null,"ext2C":null,"fanDuty":75,"faultStatus":0,"faultLog":0,"psuCapW":600}}
+{"state":"na","appRunning":true,"title":"WireView Pro II"}
+{"state":"off","appRunning":false}
 ```
 
 ## Development

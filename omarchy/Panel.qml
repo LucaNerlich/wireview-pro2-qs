@@ -27,6 +27,7 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string statusState: hasWatcher ? String(watcher.statusState || "off") : "off"
+  readonly property bool appRunning: hasWatcher ? watcher.appRunning === true : false
   readonly property real watts: hasWatcher ? Number(watcher.watts) : NaN
   readonly property string title: hasWatcher ? String(watcher.title || "") : ""
   readonly property var sensors: hasWatcher ? (watcher.sensors || null) : null
@@ -35,10 +36,12 @@ Panel {
     state: root.statusState,
     watts: root.watts,
     title: root.title,
+    appRunning: root.appRunning,
     sensors: root.sensors
   })
   readonly property string stateLine: Model.stateLine(status)
   readonly property bool hasSensors: Model.hasSensors(status)
+  readonly property bool hasLiveFault: Model.hasLiveFault(status)
 
   function runAction(action) {
     if (!hasWatcher || typeof watcher.runAction !== "function") return
@@ -63,7 +66,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(320))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(420))
+            contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(520))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -91,7 +94,7 @@ Panel {
         iconComponent: Component {
           Text {
             text: "\u26A1"
-            color: root.statusState === "live" ? root.foreground : root.urgent
+            color: root.statusState === "live" && !root.hasLiveFault ? root.foreground : root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.display
           }
@@ -112,6 +115,7 @@ Panel {
             PanelActionButton {
               iconText: "\uF4AD"
               tooltipText: "Restart app"
+              visible: root.appRunning
               foreground: root.foreground
               fontFamily: root.fontFamily
               onClicked: root.runAction("restart")
@@ -120,6 +124,7 @@ Panel {
             PanelActionButton {
               iconText: "\uF4C5"
               tooltipText: "Quit app"
+              visible: root.appRunning
               foreground: root.urgent
               fontFamily: root.fontFamily
               onClicked: root.runAction("quit")
@@ -164,8 +169,8 @@ Panel {
           }
 
           Text {
-            text: root.statusState === "off" ? "not running" : "running"
-            color: root.statusState === "off" ? root.urgent : root.foreground
+            text: Model.appLine(root.status)
+            color: root.appRunning || root.hasSensors ? root.foreground : root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
             font.bold: true
@@ -187,8 +192,10 @@ Panel {
     id: sensorsSection
 
     Column {
+      id: sensorsColumn
       width: parent.width
       spacing: Style.space(8)
+      readonly property var pinInfo: Model.pinStats(root.sensors)
 
       Text {
         text: "Sensors"
@@ -234,6 +241,51 @@ Panel {
 
           Text {
             text: Model.fmt(root.sensors.psuCapW, 0) + " W"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+          }
+        }
+      }
+
+      Row {
+        width: parent.width
+        spacing: Style.space(10)
+
+        Column {
+          width: (parent.width - parent.spacing) / 2
+          spacing: Style.space(2)
+
+          Text {
+            text: "Fan"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmtFan(root.sensors.fanDuty)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
+          }
+        }
+
+        Column {
+          width: (parent.width - parent.spacing) / 2
+          spacing: Style.space(2)
+
+          Text {
+            text: "Avg voltage"
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+
+          Text {
+            text: Model.fmt(root.sensors.voltageAvgV, 3) + " V"
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -339,10 +391,20 @@ Panel {
           }
 
           Text {
-            text: Model.fmtFault(root.sensors.faultStatus)
+            text: Model.fmtFaultNames(root.sensors.faultStatus)
             color: root.sensors.faultStatus ? root.urgent : root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+            width: parent.width
+          }
+
+          Text {
+            visible: !!root.sensors.faultStatus
+            text: Model.fmtFault(root.sensors.faultStatus)
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
           }
         }
 
@@ -358,10 +420,20 @@ Panel {
           }
 
           Text {
-            text: Model.fmtFault(root.sensors.faultLog)
+            text: Model.fmtFaultNames(root.sensors.faultLog)
             color: root.sensors.faultLog ? root.urgent : root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+            width: parent.width
+          }
+
+          Text {
+            visible: !!root.sensors.faultLog
+            text: Model.fmtFault(root.sensors.faultLog)
+            color: Qt.darker(root.foreground, 1.5)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
           }
         }
       }
@@ -377,6 +449,14 @@ Panel {
           font.pixelSize: Style.font.caption
         }
 
+        Text {
+          text: Model.imbalanceLine(root.sensors)
+          color: sensorsColumn.pinInfo && sensorsColumn.pinInfo.warn
+                 ? root.urgent : Qt.darker(root.foreground, 1.5)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
         Repeater {
           model: 6
 
@@ -384,26 +464,37 @@ Panel {
             width: parent.width
             spacing: 0
 
+            readonly property color pinColor: Model.pinIsHot(root.sensors, index)
+              ? root.urgent : root.foreground
+
             Text {
-              width: parent.width * 0.3
+              width: parent.width * 0.22
               text: "Pin " + (index + 1)
-              color: Qt.darker(root.foreground, 1.5)
+              color: parent.pinColor
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
 
             Text {
-              width: parent.width * 0.35
+              width: parent.width * 0.26
               text: Model.fmt(root.sensors.voltageV[index], 3) + " V"
-              color: root.foreground
+              color: parent.pinColor
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
             }
 
             Text {
-              width: parent.width * 0.35
+              width: parent.width * 0.26
               text: Model.fmt(root.sensors.currentA[index], 3) + " A"
-              color: root.foreground
+              color: parent.pinColor
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+
+            Text {
+              width: parent.width * 0.26
+              text: Model.fmt(Model.pinPower(root.sensors, index), 1) + " W"
+              color: parent.pinColor
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
             }

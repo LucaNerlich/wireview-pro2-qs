@@ -44,6 +44,7 @@ BarWidget {
   readonly property bool opened: panelItem ? panelItem.opened === true : false
 
   property string statusState: "off"
+  property bool appRunning: false
   property real watts: NaN
   property string title: ""
   property var sensors: null
@@ -53,22 +54,68 @@ BarWidget {
     state: root.statusState,
     watts: root.watts,
     title: root.title,
+    appRunning: root.appRunning,
     sensors: root.sensors
   })
   readonly property string labelText: Model.labelText(status)
   readonly property string tooltipText: Model.tooltipText(status)
+  readonly property bool hasLiveFault: Model.hasLiveFault(status)
+  readonly property color urgent: bar ? bar.urgent : Color.urgent
 
   function open() { if (panelItem) panelItem.open() }
   function close() { if (panelItem) panelItem.close() }
   function toggle() { if (panelItem) panelItem.toggle() }
 
+  property string lastFaultKey: ""
+  property var pendingNotify: null
+
   function applyLine(line) {
     var parsed = Model.parseLine(String(line || ""))
     if (!parsed) return
     root.statusState = parsed.state
+    root.appRunning = parsed.appRunning === true
     root.watts = parsed.state === "live" ? parsed.watts : NaN
     root.title = parsed.title
     root.sensors = parsed.sensors || null
+    root.maybeNotify({
+      state: root.statusState,
+      watts: root.watts,
+      title: root.title,
+      appRunning: root.appRunning,
+      sensors: root.sensors
+    })
+  }
+
+  function maybeNotify(status) {
+    var alert = Model.faultAlert(status)
+    var key = alert ? String(alert.key) : ""
+    if (key === root.lastFaultKey) return
+    root.lastFaultKey = key
+    if (!alert) {
+      root.pendingNotify = null
+      return
+    }
+    root.pendingNotify = alert
+    root.flushNotify()
+  }
+
+  function flushNotify() {
+    if (notifyProc.running || !root.pendingNotify) return
+    var alert = root.pendingNotify
+    root.pendingNotify = null
+    var argv = Model.notifyCommand(alert)
+    if (!argv.length) return
+    notifyProc.command = argv
+    notifyProc.running = true
+  }
+
+  function clearStatus() {
+    root.statusState = "off"
+    root.appRunning = false
+    root.watts = NaN
+    root.sensors = null
+    root.lastFaultKey = ""
+    root.pendingNotify = null
   }
 
   function runAction(action) {
@@ -88,7 +135,7 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
   }
 
-  visible: !hideWhenOff || statusState !== "off"
+  visible: !hideWhenOff || root.appRunning
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -123,7 +170,7 @@ BarWidget {
       root.watchFailures = 0
     }
     onExited: {
-      root.statusState = "off"
+      root.clearStatus()
       watchRestartTimer.restart()
     }
     onRunningChanged: {
@@ -131,7 +178,7 @@ BarWidget {
       var failedStart = !watchProc.startedOnce
       watchProc.startedOnce = false
       if (failedStart) {
-        root.statusState = "off"
+        root.clearStatus()
         root.watchFailures += 1
         if (root.watchFailures >= root.fallbackThreshold) {
           root.watchFailures = 0
@@ -181,14 +228,23 @@ BarWidget {
     }
   }
 
+  Process {
+    id: notifyProc
+    running: false
+    onRunningChanged: {
+      if (notifyProc.running) return
+      root.flushNotify()
+    }
+  }
+
   WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     text: root.labelText
-    foreground: Color.bar.text
+    foreground: root.hasLiveFault ? root.urgent : Color.bar.text
     activeColor: Color.bar.active
-    active: root.statusState === "na"
+    active: root.statusState === "na" || root.hasLiveFault
     horizontalMargin: 8.5
     verticalPadding: 6
     tooltipText: root.tooltipText
