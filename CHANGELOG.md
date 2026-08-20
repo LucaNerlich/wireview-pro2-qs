@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app binary, so a lookalike class is not focused.
 - hwmon discovery re-reads the chip `name` through the opened sysfs
   directory so a reused `hwmonN` node cannot feed another chip's sensors.
+- The QML panel no longer binds the watch-stream `title` into `PanelHero`
+  (Qt Text may treat HTML as rich text). `parseLine` also drops titles that
+  contain `<`, `>`, or `&`.
 
 ## [1.1.5] - 2026-08-19
 

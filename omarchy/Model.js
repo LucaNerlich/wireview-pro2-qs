@@ -22,9 +22,20 @@ function parseLine(line) {
   return {
     state: state,
     watts: state === "live" ? watts : NaN,
-    title: typeof parsed.title === "string" ? parsed.title : "",
+    title: safeTitle(parsed.title),
     sensors: parsed.sensors || null
   };
+}
+
+// Qt Text defaults can treat a string that looks like HTML as rich text
+// (Text.AutoText). The watch line is untrusted from QML's point of view
+// (PATH fallback binary, a swapped SNI Title), so drop markup rather than
+// let it reach PanelHero / Text.
+function safeTitle(value) {
+  if (typeof value !== "string") return "";
+  if (value.indexOf("<") !== -1 || value.indexOf(">") !== -1 || value.indexOf("&") !== -1)
+    return "";
+  return value;
 }
 
 function formatWatts(watts) {
@@ -87,6 +98,6 @@ function fmtFault(bits) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     parseLine, formatWatts, labelText, tooltipText, stateLine,
-    hasSensors, fmt, fmtTemp, fmtFault
+    hasSensors, fmt, fmtTemp, fmtFault, safeTitle
   };
 }
