@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - hwmon totals prefer the chip's `curr7_input` / `power1_input` when present,
   falling back to summing the six pins.
+- `appRunning` is observed through the same pidfd identify path as terminate
+  and never signals, so the 1 Hz watch poll cannot resurrect the pid-reuse
+  kill races closed in v1.1.4 / v1.1.6.
 
 ## [1.1.6] - 2026-08-20
 

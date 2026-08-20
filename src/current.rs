@@ -9,6 +9,9 @@ use crate::{app, hwmon, sni, status::Status};
 ///
 /// [`Status::app_running`] is filled independently so a live chip does not
 /// imply that the WireView2 GUI is running.
+///
+/// `app::is_running` is observation-only (argv[0]+uid through a pidfd). It
+/// never signals; a recycled numeric pid cannot become a kill target here.
 pub fn current_status(conn: Option<&Connection>) -> Status {
     device_status(conn).with_app_running(app::is_running())
 }

@@ -154,12 +154,20 @@ fn running_targets() -> Vec<ScannedPid> {
 }
 
 /// PIDs of every running WireView app process owned by the current user.
+///
+/// Numeric pids are for diagnostics and tests only. Signalling must go
+/// through [`terminate_running`] / [`terminate`], which pin each process
+/// with a pidfd at identify time.
 pub fn running_pids() -> Vec<i32> {
     running_targets().into_iter().map(|t| t.pid).collect()
 }
 
+/// True when at least one WireView app process is running for this user.
+///
+/// Observation only: this never signals. `watch` polls it at 1 Hz for
+/// `appRunning`. `restart`/`quit` still terminate through pidfds.
 pub fn is_running() -> bool {
-    !running_pids().is_empty()
+    !running_targets().is_empty()
 }
 
 /// Clock ticks per second from `sysconf(_SC_CLK_TCK)`, with the ubiquitous
@@ -483,6 +491,30 @@ mod tests {
     #[test]
     fn youngest_age_is_none_without_app() {
         assert!(youngest_age().is_none());
+    }
+
+    #[test]
+    fn watch_path_does_not_treat_or_signal_unrelated_same_user_process() {
+        // `appRunning` is polled at 1 Hz via is_running/youngest_age. Those
+        // must stay observation-only and keep the argv[0]+uid match, or we
+        // reintroduce #2 (over-broad kill) / #4 (recycled pid looks fresh).
+        let mut child = spawn_sleep();
+        assert!(!is_running());
+        assert!(youngest_age().is_none());
+        assert!(running_pids().is_empty());
+        for _ in 0..8 {
+            let _ = is_running();
+            let _ = youngest_age();
+        }
+        terminate_running(Duration::from_secs(1));
+        assert!(
+            child.try_wait().expect("try_wait").is_none(),
+            "is_running/youngest_age/terminate_running must not hit an unrelated pid"
+        );
+        assert!(!is_running());
+        assert!(youngest_age().is_none());
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]
