@@ -44,6 +44,7 @@ BarWidget {
   readonly property bool opened: panelItem ? panelItem.opened === true : false
 
   property string statusState: "off"
+  property bool appRunning: false
   property real watts: NaN
   property string title: ""
   property var sensors: null
@@ -53,10 +54,13 @@ BarWidget {
     state: root.statusState,
     watts: root.watts,
     title: root.title,
+    appRunning: root.appRunning,
     sensors: root.sensors
   })
   readonly property string labelText: Model.labelText(status)
   readonly property string tooltipText: Model.tooltipText(status)
+  readonly property bool hasLiveFault: Model.hasLiveFault(status)
+  readonly property color urgent: bar ? bar.urgent : Color.urgent
 
   function open() { if (panelItem) panelItem.open() }
   function close() { if (panelItem) panelItem.close() }
@@ -66,6 +70,7 @@ BarWidget {
     var parsed = Model.parseLine(String(line || ""))
     if (!parsed) return
     root.statusState = parsed.state
+    root.appRunning = parsed.appRunning === true
     root.watts = parsed.state === "live" ? parsed.watts : NaN
     root.title = parsed.title
     root.sensors = parsed.sensors || null
@@ -88,7 +93,7 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
   }
 
-  visible: !hideWhenOff || statusState !== "off"
+  visible: !hideWhenOff || root.appRunning
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -124,6 +129,9 @@ BarWidget {
     }
     onExited: {
       root.statusState = "off"
+      root.appRunning = false
+      root.watts = NaN
+      root.sensors = null
       watchRestartTimer.restart()
     }
     onRunningChanged: {
@@ -132,6 +140,9 @@ BarWidget {
       watchProc.startedOnce = false
       if (failedStart) {
         root.statusState = "off"
+        root.appRunning = false
+        root.watts = NaN
+        root.sensors = null
         root.watchFailures += 1
         if (root.watchFailures >= root.fallbackThreshold) {
           root.watchFailures = 0
@@ -186,9 +197,9 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.labelText
-    foreground: Color.bar.text
+    foreground: root.hasLiveFault ? root.urgent : Color.bar.text
     activeColor: Color.bar.active
-    active: root.statusState === "na"
+    active: root.statusState === "na" || root.hasLiveFault
     horizontalMargin: 8.5
     verticalPadding: 6
     tooltipText: root.tooltipText

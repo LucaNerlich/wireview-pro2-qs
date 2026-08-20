@@ -26,9 +26,11 @@ pub struct Sensors {
     pub voltage_v: [f64; 6],
     /// Per-pin current for the six 12VHPWR power pins, in amperes.
     pub current_a: [f64; 6],
-    /// Sum of the per-pin currents, in amperes.
+    /// Per-pin power for the six 12VHPWR power pins, in watts.
+    pub power_w: [f64; 6],
+    /// Total current, in amperes (`curr7_input` when present, else the pin sum).
     pub sum_current_a: f64,
-    /// Sum of per-pin voltage × current, in watts.
+    /// Total power, in watts (`power1_input` when present, else Σ V×I).
     pub sum_power_w: f64,
     /// Onboard intake temperature, in °C (`null` when not exposed).
     pub temp_in_c: Option<f64>,
@@ -38,6 +40,10 @@ pub struct Sensors {
     pub ext1_c: Option<f64>,
     /// External probe 2 temperature, in °C (`null` when not exposed).
     pub ext2_c: Option<f64>,
+    /// Device fan duty cycle, 0–100 (`null` when not exposed).
+    pub fan_duty: Option<u8>,
+    /// Average of the six pin voltages, in volts (`null` when not exposed).
+    pub voltage_avg_v: Option<f64>,
     /// Live fault status bitmask (`0` = no faults).
     pub fault_status: u16,
     /// Latched fault log bitmask (`0` = nothing logged).
@@ -122,23 +128,32 @@ fn read_chip_dir(dirfd: &OwnedFd) -> Option<Sensors> {
 
     let mut voltage_v = [0.0f64; 6];
     let mut current_a = [0.0f64; 6];
+    let mut power_w = [0.0f64; 6];
     for i in 0..6 {
         voltage_v[i] = read_int_or_at(dirfd, &format!("in{i}_input"), 0) as f64 / 1000.0;
         current_a[i] = read_int_or_at(dirfd, &format!("curr{}_input", i + 1), 0) as f64 / 1000.0;
+        // power2..power7 are per-pin microwatts; fall back to V×I.
+        power_w[i] = read_watts_at(dirfd, &format!("power{}_input", i + 2))
+            .unwrap_or(voltage_v[i] * current_a[i]);
     }
 
-    let sum_current_a = current_a.iter().sum();
-    let sum_power_w = voltage_v.iter().zip(&current_a).map(|(v, a)| v * a).sum();
+    let sum_current_a =
+        read_milli_at(dirfd, "curr7_input").unwrap_or_else(|| current_a.iter().sum());
+    let sum_power_w = read_watts_at(dirfd, "power1_input")
+        .unwrap_or_else(|| voltage_v.iter().zip(&current_a).map(|(v, a)| v * a).sum());
 
     Some(Sensors {
         voltage_v,
         current_a,
+        power_w,
         sum_current_a,
         sum_power_w,
         temp_in_c: read_milli_at(dirfd, "temp1_input"),
         temp_out_c: read_milli_at(dirfd, "temp2_input"),
         ext1_c: read_milli_at(dirfd, "temp3_input"),
         ext2_c: read_milli_at(dirfd, "temp4_input"),
+        fan_duty: read_fan_duty_at(dirfd, "fan1_input"),
+        voltage_avg_v: read_milli_at(dirfd, "in6_input"),
         fault_status: read_int_or_at(dirfd, "fault_status_raw", 0) as u16,
         fault_log: read_int_or_at(dirfd, "fault_log_raw", 0) as u16,
         psu_cap_w: read_i64_at(dirfd, "psu_cap").map(map_psu_cap),
@@ -180,9 +195,20 @@ fn read_int_or_at(dirfd: &OwnedFd, name: &str, default: i64) -> i64 {
     read_i64_at(dirfd, name).unwrap_or(default)
 }
 
-/// Millidegree input (hwmon convention) to °C, `None` when absent/invalid.
+/// Millidegree / millivolt / milliamp input to the SI unit, `None` when absent.
 fn read_milli_at(dirfd: &OwnedFd, name: &str) -> Option<f64> {
     read_i64_at(dirfd, name).map(|v| v as f64 / 1000.0)
+}
+
+/// Microwatt hwmon power input to watts, `None` when absent/invalid.
+fn read_watts_at(dirfd: &OwnedFd, name: &str) -> Option<f64> {
+    read_i64_at(dirfd, name).map(|v| v as f64 / 1_000_000.0)
+}
+
+/// Fan duty 0–100 as reported by `fan1_input`. Out-of-range values are clamped.
+fn read_fan_duty_at(dirfd: &OwnedFd, name: &str) -> Option<u8> {
+    let v = read_i64_at(dirfd, name)?;
+    Some(v.clamp(0, 100) as u8)
 }
 
 #[cfg(test)]
@@ -213,6 +239,16 @@ mod tests {
                 ("curr4_input", "1550\n"),
                 ("curr5_input", "1490\n"),
                 ("curr6_input", "1510\n"),
+                ("curr7_input", "9050\n"),
+                ("power1_input", "109123000\n"),
+                ("power2_input", "18075000\n"),
+                ("power3_input", "18361600\n"),
+                ("power4_input", "17789600\n"),
+                ("power5_input", "18755000\n"),
+                ("power6_input", "17939600\n"),
+                ("power7_input", "18210600\n"),
+                ("in6_input", "12058\n"),
+                ("fan1_input", "75\n"),
                 ("temp1_input", "34500\n"),
                 ("temp2_input", "41200\n"),
                 ("temp3_input", "27800\n"),
@@ -246,10 +282,10 @@ mod tests {
         assert!((s.voltage_v[0] - 12.05).abs() < 1e-9);
         assert!((s.current_a[5] - 1.51).abs() < 1e-9);
         assert!((s.sum_current_a - 9.05).abs() < 1e-9);
-        // 12.05*1.5 + 12.08*1.52 + 12.02*1.48 + 12.10*1.55 + 12.04*1.49 + 12.06*1.51
-        let expect_w =
-            12.05 * 1.5 + 12.08 * 1.52 + 12.02 * 1.48 + 12.10 * 1.55 + 12.04 * 1.49 + 12.06 * 1.51;
-        assert!((s.sum_power_w - expect_w).abs() < 1e-9);
+        assert!((s.sum_power_w - 109.123).abs() < 1e-9);
+        assert!((s.power_w[0] - 18.075).abs() < 1e-9);
+        assert_eq!(s.fan_duty, Some(75));
+        assert_eq!(s.voltage_avg_v, Some(12.058));
         assert_eq!(s.temp_in_c, Some(34.5));
         assert_eq!(s.temp_out_c, Some(41.2));
         assert_eq!(s.ext1_c, Some(27.8));
@@ -270,6 +306,37 @@ mod tests {
     }
 
     #[test]
+    fn falls_back_to_pin_sum_when_totals_are_missing() {
+        let base = std::env::temp_dir().join("wv-hwmon-fallback");
+        let _ = fs::remove_dir_all(&base);
+        write(
+            &base.join("hwmon0"),
+            &[
+                ("name", "wireview\n"),
+                ("in0_input", "12000\n"),
+                ("in1_input", "12000\n"),
+                ("in2_input", "12000\n"),
+                ("in3_input", "12000\n"),
+                ("in4_input", "12000\n"),
+                ("in5_input", "12000\n"),
+                ("curr1_input", "1000\n"),
+                ("curr2_input", "1000\n"),
+                ("curr3_input", "1000\n"),
+                ("curr4_input", "1000\n"),
+                ("curr5_input", "1000\n"),
+                ("curr6_input", "1000\n"),
+            ],
+        );
+        let s = read_chip(&base.join("hwmon0")).unwrap();
+        assert!((s.sum_current_a - 6.0).abs() < 1e-9);
+        assert!((s.sum_power_w - 72.0).abs() < 1e-9);
+        assert!((s.power_w[0] - 12.0).abs() < 1e-9);
+        assert_eq!(s.fan_duty, None);
+        assert_eq!(s.voltage_avg_v, None);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn chip_without_reading_is_none() {
         let base = std::env::temp_dir().join("wv-hwmon-empty");
         let _ = fs::remove_dir_all(&base);
@@ -286,7 +353,10 @@ mod tests {
         let json = serde_json::to_value(&s).unwrap();
         assert_eq!(json["voltageV"][0], 12.05);
         assert_eq!(json["sumCurrentA"], 9.05);
-        assert_eq!(json["sumPowerW"], json["sumPowerW"]);
+        assert_eq!(json["sumPowerW"], 109.123);
+        assert_eq!(json["powerW"][0], 18.075);
+        assert_eq!(json["fanDuty"], 75);
+        assert_eq!(json["voltageAvgV"], 12.058);
         assert!(json["ext2C"].is_null());
         assert_eq!(json["psuCapW"], 600);
         let _ = fs::remove_dir_all(&base);

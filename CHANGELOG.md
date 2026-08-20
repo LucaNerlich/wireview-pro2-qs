@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Status reports `appRunning` separately from the device reading, so a live
+  hwmon chip no longer pretends the WireView2 GUI is running. The panel App
+  row shows "daemon only" in that case, Restart/Quit hide until the GUI is
+  up, and `hideWhenOff` keys off the GUI process.
+- Named fault labels (matching wireview-linux: chip/sensor over-temp, OCP,
+  wire OCP, OPP, current imbalance) instead of raw hex. Hex remains as a
+  caption. The bar uses the urgent color while a live fault is set.
+- Per-pin watts, a current-imbalance caption (firmware v03: ≥6 A and >40%
+  spread), and fan duty / average voltage in the details panel.
+
+### Changed
+
+- hwmon totals prefer the chip's `curr7_input` / `power1_input` when present,
+  falling back to summing the six pins.
+
 ## [1.1.6] - 2026-08-20
 
 ### Fixed

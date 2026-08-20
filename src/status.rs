@@ -6,11 +6,11 @@ use crate::hwmon::Sensors;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum State {
-    /// App is running and reports a power reading.
+    /// Device (or SNI title) reports a power reading.
     Live,
     /// App is running but reports no reading (e.g. tray power display off).
     Na,
-    /// App is not running.
+    /// No device reading and no SNI title.
     Off,
 }
 
@@ -22,6 +22,10 @@ pub struct Status {
     pub watts: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Whether `/usr/bin/wireview-linux` is running for this user.
+    /// Independent of [`State`]: a live hwmon chip can exist without the GUI.
+    #[serde(rename = "appRunning")]
+    pub app_running: bool,
     /// Full per-pin/temperature/fault data, present only when read from the
     /// `wireview` hwmon chip rather than the app's SNI title.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,8 +38,15 @@ impl Status {
             state: State::Off,
             watts: None,
             title: None,
+            app_running: false,
             sensors: None,
         }
+    }
+
+    /// Overlay the GUI process check without changing the device reading.
+    pub fn with_app_running(mut self, running: bool) -> Self {
+        self.app_running = running;
+        self
     }
 
     /// Build a live status from a hwmon sensor snapshot.
@@ -45,6 +56,7 @@ impl Status {
             state: State::Live,
             watts: Some(watts),
             title: Some(format!("WireView Pro II - {watts:.1} W")),
+            app_running: false,
             sensors: Some(sensors.clone()),
         }
     }
@@ -66,6 +78,7 @@ impl Status {
                             state: State::Live,
                             watts: Some(watts),
                             title: Some(title.to_string()),
+                            app_running: false,
                             sensors: None,
                         });
                     }
@@ -78,6 +91,7 @@ impl Status {
                 state: State::Na,
                 watts: None,
                 title: Some(title.to_string()),
+                app_running: false,
                 sensors: None,
             });
         }
@@ -96,6 +110,7 @@ mod tests {
         assert_eq!(s.state, State::Live);
         assert_eq!(s.watts, Some(43.0));
         assert_eq!(s.title.as_deref(), Some("WireView Pro II - 43 W"));
+        assert!(!s.app_running);
     }
 
     #[test]
@@ -142,18 +157,45 @@ mod tests {
 
     #[test]
     fn serializes_live_as_json() {
-        let s = Status::from_title(Some("WireView Pro II - 43 W")).unwrap();
+        let s = Status::from_title(Some("WireView Pro II - 43 W"))
+            .unwrap()
+            .with_app_running(true);
         let json = serde_json::to_string(&s).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["state"], "live");
         assert_eq!(parsed["watts"], 43.0);
         assert_eq!(parsed["title"], "WireView Pro II - 43 W");
+        assert_eq!(parsed["appRunning"], true);
     }
 
     #[test]
     fn serializes_off_without_optional_fields() {
         let json = serde_json::to_string(&Status::off()).unwrap();
-        assert_eq!(json, r#"{"state":"off"}"#);
+        assert_eq!(json, r#"{"state":"off","appRunning":false}"#);
+    }
+
+    #[test]
+    fn overlays_app_running_on_a_hwmon_reading() {
+        let sensors = crate::hwmon::Sensors {
+            voltage_v: [12.0; 6],
+            current_a: [1.5; 6],
+            power_w: [18.0; 6],
+            sum_current_a: 9.0,
+            sum_power_w: 108.0,
+            temp_in_c: Some(34.5),
+            temp_out_c: None,
+            ext1_c: None,
+            ext2_c: None,
+            fan_duty: Some(75),
+            voltage_avg_v: Some(12.0),
+            fault_status: 0,
+            fault_log: 1,
+            psu_cap_w: Some(600),
+        };
+        let s = Status::from_sensors(&sensors).with_app_running(false);
+        assert_eq!(s.state, State::Live);
+        assert!(!s.app_running);
+        assert_eq!(s.watts, Some(108.0));
     }
 
     #[test]
@@ -161,12 +203,15 @@ mod tests {
         let sensors = crate::hwmon::Sensors {
             voltage_v: [12.0; 6],
             current_a: [1.5; 6],
+            power_w: [18.0; 6],
             sum_current_a: 9.0,
             sum_power_w: 108.0,
             temp_in_c: Some(34.5),
             temp_out_c: None,
             ext1_c: None,
             ext2_c: None,
+            fan_duty: None,
+            voltage_avg_v: None,
             fault_status: 0,
             fault_log: 1,
             psu_cap_w: Some(600),
@@ -178,10 +223,12 @@ mod tests {
         let json = serde_json::to_value(&s).unwrap();
         assert_eq!(json["state"], "live");
         assert_eq!(json["watts"], 108.0);
+        assert_eq!(json["appRunning"], false);
         assert_eq!(json["sensors"]["sumPowerW"], 108.0);
         assert_eq!(json["sensors"]["tempInC"], 34.5);
         assert!(json["sensors"]["tempOutC"].is_null());
         assert_eq!(json["sensors"]["faultLog"], 1);
         assert_eq!(json["sensors"]["psuCapW"], 600);
+        assert_eq!(json["sensors"]["powerW"][0], 18.0);
     }
 }

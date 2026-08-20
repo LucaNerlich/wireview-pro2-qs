@@ -25,7 +25,7 @@
         "key": "hideWhenOff",
         "type": "boolean",
         "label": "Hide when off",
-        "description": "Hide the widget entirely when the WireView app is not running.",
+        "description": "Hide the widget entirely when the WireView2 GUI is not running, even if the hwmon chip is live.",
         "defaultValue": false
       }
     ]
