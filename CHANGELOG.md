@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `restart`/`quit` deliver SIGTERM and SIGKILL with `pidfd_send_signal` on
+  the scanned `/proc/<pid>` directory fd. Identity is read through that
+  same fd, so a pid recycled between a `/proc` check and `kill(2)` cannot
+  redirect the signal at an unrelated same-user process.
+
 ## [1.1.5] - 2026-08-19
 
 ### Fixed
