@@ -11,7 +11,11 @@
 //! over the serial port, which is exclusive), callers fall back to the SNI
 //! title. The file layout and unit conversions mirror `HwmonDevice.cs`.
 
-use std::fs;
+use std::ffi::CString;
+use std::fs::{self, File};
+use std::io::Read;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 /// Full sensor snapshot read from the `wireview` hwmon chip.
@@ -64,18 +68,63 @@ pub fn find_chip(base: &Path) -> Option<PathBuf> {
     None
 }
 
+fn open_dir(path: &Path) -> Option<OwnedFd> {
+    let path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: path is a valid C string; open fails with -1 on error.
+    let fd = unsafe {
+        libc::open(
+            path.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return None;
+    }
+    // SAFETY: fd is a newly opened directory we own.
+    Some(unsafe { OwnedFd::from_raw_fd(fd) })
+}
+
+fn read_entry(dirfd: &OwnedFd, name: &str) -> Option<Vec<u8>> {
+    let name = CString::new(name).ok()?;
+    // SAFETY: dirfd is an open directory; name is a valid C string.
+    let fd = unsafe {
+        libc::openat(
+            dirfd.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW,
+        )
+    };
+    if fd < 0 {
+        return None;
+    }
+    // SAFETY: fd is a newly opened file we own.
+    let mut file = unsafe { File::from_raw_fd(fd) };
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+    Some(buf)
+}
+
+fn chip_name(dirfd: &OwnedFd) -> Option<String> {
+    let buf = read_entry(dirfd, "name")?;
+    Some(std::str::from_utf8(&buf).ok()?.trim().to_string())
+}
+
 /// Read every sensor file from a WireView hwmon chip. Returns `None` when the
 /// chip has no live reading yet (the daemon exposes `in0_input` as the gate).
 pub fn read_chip(chip: &Path) -> Option<Sensors> {
+    read_chip_dir(&open_dir(chip)?)
+}
+
+fn read_chip_dir(dirfd: &OwnedFd) -> Option<Sensors> {
     // The app gates "connected" on `in0_input`; treat its absence as "the
     // daemon owns the device but is not feeding this chip right now".
-    read_i64(&chip.join("in0_input"))?;
+    read_i64_at(dirfd, "in0_input")?;
 
     let mut voltage_v = [0.0f64; 6];
     let mut current_a = [0.0f64; 6];
     for i in 0..6 {
-        voltage_v[i] = read_int_or(&chip.join(format!("in{i}_input")), 0) as f64 / 1000.0;
-        current_a[i] = read_int_or(&chip.join(format!("curr{}_input", i + 1)), 0) as f64 / 1000.0;
+        voltage_v[i] = read_int_or_at(dirfd, &format!("in{i}_input"), 0) as f64 / 1000.0;
+        current_a[i] = read_int_or_at(dirfd, &format!("curr{}_input", i + 1), 0) as f64 / 1000.0;
     }
 
     let sum_current_a = current_a.iter().sum();
@@ -86,19 +135,29 @@ pub fn read_chip(chip: &Path) -> Option<Sensors> {
         current_a,
         sum_current_a,
         sum_power_w,
-        temp_in_c: read_milli(&chip.join("temp1_input")),
-        temp_out_c: read_milli(&chip.join("temp2_input")),
-        ext1_c: read_milli(&chip.join("temp3_input")),
-        ext2_c: read_milli(&chip.join("temp4_input")),
-        fault_status: read_int_or(&chip.join("fault_status_raw"), 0) as u16,
-        fault_log: read_int_or(&chip.join("fault_log_raw"), 0) as u16,
-        psu_cap_w: read_i64(&chip.join("psu_cap")).map(map_psu_cap),
+        temp_in_c: read_milli_at(dirfd, "temp1_input"),
+        temp_out_c: read_milli_at(dirfd, "temp2_input"),
+        ext1_c: read_milli_at(dirfd, "temp3_input"),
+        ext2_c: read_milli_at(dirfd, "temp4_input"),
+        fault_status: read_int_or_at(dirfd, "fault_status_raw", 0) as u16,
+        fault_log: read_int_or_at(dirfd, "fault_log_raw", 0) as u16,
+        psu_cap_w: read_i64_at(dirfd, "psu_cap").map(map_psu_cap),
     })
 }
 
 /// Discover and read the WireView hwmon chip under `/sys/class/hwmon`.
+///
+/// After locating a `hwmon*` node whose `name` is `wireview`, the chip
+/// directory is opened and `name` is re-read through that fd so a reused
+/// `hwmonN` slot cannot feed another chip's sensors.
 pub fn discover() -> Option<Sensors> {
-    find_chip(Path::new("/sys/class/hwmon")).and_then(|chip| read_chip(&chip))
+    let path = find_chip(Path::new("/sys/class/hwmon"))?;
+    let dirfd = open_dir(&path)?;
+    let ident = chip_name(&dirfd)?;
+    if !ident.eq_ignore_ascii_case("wireview") {
+        return None;
+    }
+    read_chip_dir(&dirfd)
 }
 
 /// The `psu_cap` sysfs value encodes the rated wattage as a small enum.
@@ -112,17 +171,18 @@ fn map_psu_cap(value: i64) -> u16 {
     }
 }
 
-fn read_i64(path: &Path) -> Option<i64> {
-    fs::read_to_string(path).ok()?.trim().parse().ok()
+fn read_i64_at(dirfd: &OwnedFd, name: &str) -> Option<i64> {
+    let buf = read_entry(dirfd, name)?;
+    std::str::from_utf8(&buf).ok()?.trim().parse().ok()
 }
 
-fn read_int_or(path: &Path, default: i64) -> i64 {
-    read_i64(path).unwrap_or(default)
+fn read_int_or_at(dirfd: &OwnedFd, name: &str, default: i64) -> i64 {
+    read_i64_at(dirfd, name).unwrap_or(default)
 }
 
 /// Millidegree input (hwmon convention) to °C, `None` when absent/invalid.
-fn read_milli(path: &Path) -> Option<f64> {
-    read_i64(path).map(|v| v as f64 / 1000.0)
+fn read_milli_at(dirfd: &OwnedFd, name: &str) -> Option<f64> {
+    read_i64_at(dirfd, name).map(|v| v as f64 / 1000.0)
 }
 
 #[cfg(test)]
@@ -229,6 +289,31 @@ mod tests {
         assert_eq!(json["sumPowerW"], json["sumPowerW"]);
         assert!(json["ext2C"].is_null());
         assert_eq!(json["psuCapW"], 600);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn opened_chip_dir_does_not_follow_a_replaced_node() {
+        let base = std::env::temp_dir().join("wv-hwmon-reuse");
+        let _ = fs::remove_dir_all(&base);
+        write(
+            &base.join("hwmon0"),
+            &[("name", "wireview\n"), ("in0_input", "12000\n")],
+        );
+        let dirfd = open_dir(&base.join("hwmon0")).expect("open chip dir");
+        assert_eq!(chip_name(&dirfd).as_deref(), Some("wireview"));
+
+        fs::remove_dir_all(base.join("hwmon0")).expect("replace chip node");
+        write(
+            &base.join("hwmon0"),
+            &[("name", "coretemp\n"), ("in0_input", "999\n")],
+        );
+
+        assert_ne!(
+            chip_name(&dirfd).as_deref(),
+            Some("coretemp"),
+            "a reused hwmonN path must not be visible through the original dir fd"
+        );
         let _ = fs::remove_dir_all(&base);
     }
 }

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `restart`/`quit` deliver SIGTERM and SIGKILL with `pidfd_send_signal` on
+  the scanned `/proc/<pid>` directory fd. Identity is read through that
+  same fd, so a pid recycled between a `/proc` check and `kill(2)` cannot
+  redirect the signal at an unrelated same-user process.
+- `open` reads process age through that same directory fd, so a recycled
+  pid cannot look like a fresh WireView instance and skip a needed restart.
+- Window focus requires the Hyprland client's pid to still identify as the
+  app binary, so a lookalike class is not focused.
+- hwmon discovery re-reads the chip `name` through the opened sysfs
+  directory so a reused `hwmonN` node cannot feed another chip's sensors.
+- The QML panel no longer binds the watch-stream `title` into `PanelHero`
+  (Qt Text may treat HTML as rich text). `parseLine` also drops titles that
+  contain `<`, `>`, or `&`.
+
 ## [1.1.5] - 2026-08-19
 
 ### Fixed

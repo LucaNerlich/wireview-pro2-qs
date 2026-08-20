@@ -82,7 +82,9 @@ Panel {
         width: parent.width
         title: "WireView Pro II"
         meta: root.stateLine
-        detail: root.statusState === "live" ? root.title : "Thermal Grizzly GPU power monitor"
+        // Do not bind the watch-stream `title` here. Qt Text may interpret
+        // HTML as rich text (AutoText); watts already appear in `meta`.
+        detail: "Thermal Grizzly GPU power monitor"
         foreground: root.foreground
         fontFamily: root.fontFamily
 
