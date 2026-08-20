@@ -158,7 +158,7 @@ Status lines:
 
 ```json
 {"state":"live","watts":43.2,"appRunning":true,"title":"WireView Pro II - 43.2 W"}
-{"state":"live","watts":43.2,"appRunning":false,"sensors":{}}
+{"state":"live","watts":108.05,"appRunning":false,"sensors":{"voltageV":[12.0,12.1],"currentA":[1.5,1.6],"powerW":[18.0,19.36],"sumCurrentA":3.1,"sumPowerW":108.05,"tempInC":34.5,"tempOutC":null,"ext1C":null,"ext2C":null,"fanDuty":75,"faultStatus":0,"faultLog":0,"psuCapW":600}}
 {"state":"na","appRunning":true,"title":"WireView Pro II"}
 {"state":"off","appRunning":false}
 ```

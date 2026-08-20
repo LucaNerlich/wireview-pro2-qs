@@ -82,8 +82,9 @@ function tooltipText(status) {
 
 function stateLine(status) {
   if (!status) return "unknown";
-  if (hasLiveFault(status))
-    return "Fault: " + namedFaults(status.sensors.faultStatus).join(", ");
+  var alert = faultAlert(status);
+  if (alert)
+    return "Fault: " + alert.body;
   if (status.state === "live") return "Power draw: " + formatWatts(status.watts) + " W";
   if (status.state === "na") return "App running \u2014 no reading";
   return "App not running";

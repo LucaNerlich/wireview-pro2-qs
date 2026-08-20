@@ -180,6 +180,14 @@ assert.ok(
   Model.stateLine({ state: "live", watts: 50, sensors: { faultStatus: 0x10 } }).includes("Over-Power"),
   "fault overrides the power line"
 );
+assert.ok(
+  Model.stateLine({ state: "live", watts: 50, sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }).includes("Current Imbalance"),
+  "computed imbalance with faultStatus 0 displays alert text"
+);
+assert.ok(
+  Model.stateLine({ state: "live", watts: 50, sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }).includes("pin 1"),
+  "computed imbalance stateLine includes pin details"
+);
 
 // faultAlert / notifyCommand
 
