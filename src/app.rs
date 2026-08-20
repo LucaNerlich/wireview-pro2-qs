@@ -162,6 +162,51 @@ pub fn is_running() -> bool {
     !running_pids().is_empty()
 }
 
+/// Clock ticks per second from `sysconf(_SC_CLK_TCK)`, with the ubiquitous
+/// x86_64 fallback when the call fails.
+fn ticks_per_sec() -> f64 {
+    // SAFETY: sysconf has no preconditions.
+    let value = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    if value > 0 { value as f64 } else { 100.0 }
+}
+
+/// The age of a process in seconds, parsed from `/proc/<pid>/stat` contents.
+/// `starttime` (field 22) is in clock ticks since boot; age is the difference
+/// to the system uptime. Returns `None` when the stat line is malformed.
+fn age_from_stat(uptime_secs: f64, ticks_per_sec: f64, stat: &str) -> Option<f64> {
+    // Everything after "pid (comm) " starts at field 3 (state), so the
+    // 22nd overall field (starttime) sits at index 19 of the remainder.
+    let rest = stat.rsplit_once(')')?.1;
+    let start_ticks: f64 = rest.split_whitespace().nth(19)?.parse().ok()?;
+    Some((uptime_secs - start_ticks / ticks_per_sec).max(0.0))
+}
+
+fn age_of_pidfd(pidfd: &OwnedFd, uptime_secs: f64, ticks: f64) -> Option<f64> {
+    let stat = read_proc_entry(pidfd, "stat")?;
+    let stat = std::str::from_utf8(&stat).ok()?;
+    age_from_stat(uptime_secs, ticks, stat)
+}
+
+/// The age of the most recently started WireView process, if any.
+///
+/// Starttime is read with `openat` on the same `/proc/<pid>` directory fd
+/// used to identify the process, so a recycled pid cannot look like a
+/// fresh WireView instance.
+pub fn youngest_age() -> Option<Duration> {
+    let uptime_secs: f64 = fs::read_to_string("/proc/uptime")
+        .ok()?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    let ticks = ticks_per_sec();
+    running_targets()
+        .iter()
+        .filter_map(|t| age_of_pidfd(&t.pidfd, uptime_secs, ticks))
+        .map(Duration::from_secs_f64)
+        .min()
+}
+
 /// Spawn the app detached from this process; it keeps running after we exit.
 pub fn launch() -> std::io::Result<()> {
     Command::new(APP_BINARY)
@@ -217,6 +262,10 @@ pub fn terminate(pids: &[i32], timeout: Duration) {
 }
 
 /// The address of the app's Hyprland window, if it exists and is mapped.
+///
+/// The client's pid must still identify as the WireView binary; a lookalike
+/// class or a recycled compositor address attached to another process is
+/// ignored.
 pub fn window_address() -> Option<String> {
     let output = Command::new("hyprctl")
         .args(["clients", "-j"])
@@ -226,14 +275,24 @@ pub fn window_address() -> Option<String> {
         return None;
     }
     let clients: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    clients.as_array()?.iter().find_map(|client| {
-        let class = client.get("class")?.as_str()?;
-        if class.to_lowercase().contains("wireview2") {
-            client.get("address")?.as_str().map(str::to_string)
-        } else {
-            None
-        }
-    })
+    clients
+        .as_array()?
+        .iter()
+        .find_map(client_address_if_wireview)
+}
+
+fn class_looks_like_wireview(class: &str) -> bool {
+    class.to_lowercase().contains("wireview2")
+}
+
+fn client_address_if_wireview(client: &serde_json::Value) -> Option<String> {
+    let class = client.get("class")?.as_str()?;
+    if !class_looks_like_wireview(class) {
+        return None;
+    }
+    let pid = i32::try_from(client.get("pid")?.as_i64()?).ok()?;
+    identify(pid)?;
+    client.get("address")?.as_str().map(str::to_string)
 }
 
 /// Focus the window through Hyprland's lua dispatcher (Hyprland >= 0.55).
@@ -376,8 +435,88 @@ mod tests {
     }
 
     #[test]
+    fn parses_age_from_stat_line() {
+        // "123 (wireview-linux) S ..." with starttime (field 22) at 9500
+        // ticks; uptime 100 s at 100 ticks/s means the process is 5 s old.
+        let stat = "123 (wireview-linux) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 9500 0 0 0 0 0 0 0";
+        let age = age_from_stat(100.0, 100.0, stat).unwrap();
+        assert_eq!(age, 5.0);
+    }
+
+    #[test]
+    fn parses_age_with_spaces_in_comm() {
+        let stat = "123 (wire view pro ii) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 9000 0 0 0 0 0 0 0";
+        let age = age_from_stat(100.0, 100.0, stat).unwrap();
+        assert_eq!(age, 10.0);
+    }
+
+    #[test]
+    fn age_is_never_negative() {
+        let stat = "123 (x) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 20000 0 0 0 0 0 0 0";
+        assert_eq!(age_from_stat(100.0, 100.0, stat).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn rejects_malformed_stat_line() {
+        assert!(age_from_stat(100.0, 100.0, "garbage").is_none());
+        assert!(age_from_stat(100.0, 100.0, "123 (x) S").is_none());
+    }
+
+    #[test]
+    fn pinned_stat_does_not_observe_a_later_process() {
+        let mut first = spawn_sleep();
+        let pidfd = open_proc_dir(first.id() as i32).expect("open /proc dir");
+        first.kill().expect("kill first");
+        first.wait().expect("wait first");
+
+        let mut second = spawn_sleep();
+        assert!(
+            read_proc_entry(&pidfd, "stat").is_none(),
+            "openat on a reaped proc dir must not read a later occupant's stat"
+        );
+        assert!(age_of_pidfd(&pidfd, 100.0, 100.0).is_none());
+
+        let _ = second.kill();
+        let _ = second.wait();
+    }
+
+    #[test]
+    fn youngest_age_is_none_without_app() {
+        assert!(youngest_age().is_none());
+    }
+
+    #[test]
     fn focus_expression_shape() {
         let expr = format!("hl.dsp.focus({{ window = \"address:{}\" }})", "0x1234");
         assert_eq!(expr, "hl.dsp.focus({ window = \"address:0x1234\" })");
+    }
+
+    #[test]
+    fn window_client_rejects_unrelated_class() {
+        let client = serde_json::json!({
+            "class": "firefox",
+            "pid": std::process::id(),
+            "address": "0x1"
+        });
+        assert!(client_address_if_wireview(&client).is_none());
+    }
+
+    #[test]
+    fn window_client_rejects_lookalike_class_without_app_pid() {
+        let client = serde_json::json!({
+            "class": "WireView2",
+            "pid": 1,
+            "address": "0x1"
+        });
+        assert!(client_address_if_wireview(&client).is_none());
+    }
+
+    #[test]
+    fn window_client_rejects_missing_pid() {
+        let client = serde_json::json!({
+            "class": "WireView2",
+            "address": "0x1"
+        });
+        assert!(client_address_if_wireview(&client).is_none());
     }
 }
