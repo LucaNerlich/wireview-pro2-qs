@@ -125,7 +125,8 @@ present.
   voltage, current, and watts, an imbalance caption (highlighting the hottest
   pin when a pin is ≥6 A and the spread exceeds 40%), fan duty, temperatures,
   named fault status/log, and the PSU rating. A live fault paints the bar in
-  the urgent color. Enter opens the app window, Tab moves to the neighboring
+  the urgent color and sends a critical Omarchy notification (click it to
+  open this panel). Enter opens the app window, Tab moves to the neighboring
   bar panel, Esc closes.
 - **Shell**: `omarchy-shell shell summon luca.wireview-pro2 '{}'` opens the
   panel, `omarchy-shell shell hide luca.wireview-pro2` closes it.

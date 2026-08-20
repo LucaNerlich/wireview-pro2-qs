@@ -96,6 +96,7 @@ eq(Model.hasSensors({ sensors: null }), false, "null sensors");
 eq(Model.hasSensors({}), false, "missing sensors");
 eq(Model.hasLiveFault({ sensors: { faultStatus: 0 } }), false, "no live fault");
 eq(Model.hasLiveFault({ sensors: { faultStatus: 0x20 } }), true, "imbalance fault");
+eq(Model.hasLiveFault({ sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }), true, "computed imbalance is a live fault");
 eq(Model.appLine({ appRunning: true }), "running", "app running");
 eq(Model.appLine({ appRunning: false, sensors: { voltageV: [], currentA: [] } }), "daemon only", "hwmon without GUI");
 eq(Model.appLine({ appRunning: false }), "not running", "nothing running");
@@ -179,5 +180,25 @@ assert.ok(
   Model.stateLine({ state: "live", watts: 50, sensors: { faultStatus: 0x10 } }).includes("Over-Power"),
   "fault overrides the power line"
 );
+
+// faultAlert / notifyCommand
+
+eq(Model.faultAlert({}), null, "no sensors is not an alert");
+eq(Model.faultAlert({ sensors: { faultStatus: 0 } }), null, "zero mask is not an alert");
+eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).headline, "WireView Pro II fault", "ocp headline");
+eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).body, "Over-Current", "ocp body");
+eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).key, "Over-Current", "ocp key");
+eq(Model.faultAlert({ sensors: { faultStatus: 0x20, currentA: [9, 1, 1, 1, 1, 1] } }).key,
+  "Current Imbalance", "device bit is not duplicated");
+assert.ok(
+  Model.faultAlert({ sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }).body.indexOf("pin 1") !== -1,
+  "computed imbalance names the hot pin"
+);
+
+const notify = Model.notifyCommand(Model.faultAlert({ sensors: { faultStatus: 0x10 } }));
+eq(notify[0], "omarchy-notification-send", "goes through omarchy.notifications");
+assert.ok(notify.indexOf("critical") !== -1, "critical urgency");
+assert.ok(notify.indexOf("omarchy-shell shell summon luca.wireview-pro2 '{}'") !== -1, "click opens panel");
+eq(Model.notifyCommand(null), [], "null alert is empty argv");
 
 console.log("model.test.mjs: all assertions passed");

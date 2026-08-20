@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Named fault labels (matching wireview-linux: chip/sensor over-temp, OCP,
   wire OCP, OPP, current imbalance) instead of raw hex. Hex remains as a
   caption. The bar uses the urgent color while a live fault is set.
+- Critical `omarchy.notifications` toasts (via `omarchy-notification-send`)
+  when a live fault appears or the pin-imbalance heuristic trips. The same
+  condition is not re-sent every poll; clicking the toast summons the panel.
 - Per-pin watts, a current-imbalance caption (firmware v03: ≥6 A and >40%
   spread), and fan duty / average voltage in the details panel.
 

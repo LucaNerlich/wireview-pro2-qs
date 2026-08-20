@@ -66,6 +66,9 @@ BarWidget {
   function close() { if (panelItem) panelItem.close() }
   function toggle() { if (panelItem) panelItem.toggle() }
 
+  property string lastFaultKey: ""
+  property var pendingNotify: null
+
   function applyLine(line) {
     var parsed = Model.parseLine(String(line || ""))
     if (!parsed) return
@@ -74,6 +77,45 @@ BarWidget {
     root.watts = parsed.state === "live" ? parsed.watts : NaN
     root.title = parsed.title
     root.sensors = parsed.sensors || null
+    root.maybeNotify({
+      state: root.statusState,
+      watts: root.watts,
+      title: root.title,
+      appRunning: root.appRunning,
+      sensors: root.sensors
+    })
+  }
+
+  function maybeNotify(status) {
+    var alert = Model.faultAlert(status)
+    var key = alert ? String(alert.key) : ""
+    if (key === root.lastFaultKey) return
+    root.lastFaultKey = key
+    if (!alert) {
+      root.pendingNotify = null
+      return
+    }
+    root.pendingNotify = alert
+    root.flushNotify()
+  }
+
+  function flushNotify() {
+    if (notifyProc.running || !root.pendingNotify) return
+    var alert = root.pendingNotify
+    root.pendingNotify = null
+    var argv = Model.notifyCommand(alert)
+    if (!argv.length) return
+    notifyProc.command = argv
+    notifyProc.running = true
+  }
+
+  function clearStatus() {
+    root.statusState = "off"
+    root.appRunning = false
+    root.watts = NaN
+    root.sensors = null
+    root.lastFaultKey = ""
+    root.pendingNotify = null
   }
 
   function runAction(action) {
@@ -128,10 +170,7 @@ BarWidget {
       root.watchFailures = 0
     }
     onExited: {
-      root.statusState = "off"
-      root.appRunning = false
-      root.watts = NaN
-      root.sensors = null
+      root.clearStatus()
       watchRestartTimer.restart()
     }
     onRunningChanged: {
@@ -139,10 +178,7 @@ BarWidget {
       var failedStart = !watchProc.startedOnce
       watchProc.startedOnce = false
       if (failedStart) {
-        root.statusState = "off"
-        root.appRunning = false
-        root.watts = NaN
-        root.sensors = null
+        root.clearStatus()
         root.watchFailures += 1
         if (root.watchFailures >= root.fallbackThreshold) {
           root.watchFailures = 0
@@ -189,6 +225,15 @@ BarWidget {
       actionProc.retried = true
       actionProc.command = [root.actionBinary, root.pendingAction]
       actionProc.running = true
+    }
+  }
+
+  Process {
+    id: notifyProc
+    running: false
+    onRunningChanged: {
+      if (notifyProc.running) return
+      root.flushNotify()
     }
   }
 

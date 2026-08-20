@@ -104,10 +104,43 @@ function hasSensors(status) {
 }
 
 function hasLiveFault(status) {
-  var s = status && status.sensors;
-  if (!s) return false;
-  var n = Number(s.faultStatus);
-  return isFinite(n) && n !== 0;
+  return faultAlert(status) !== null;
+}
+
+// High-importance toast for omarchy.notifications (via omarchy-notification-send).
+// Live device fault bits, plus the firmware v03 pin-imbalance heuristic when
+// that bit is not already set. Returns null when nothing is alarming.
+function faultAlert(status) {
+  var sensors = status && status.sensors;
+  var names = namedFaults(sensors && sensors.faultStatus);
+  var stats = pinStats(sensors);
+  if (stats && stats.warn && names.indexOf("Current Imbalance") === -1)
+    names = names.concat(["Current Imbalance"]);
+  if (!names.length) return null;
+
+  var body = names.join(", ");
+  if (stats && stats.warn)
+    body += " — pin " + (stats.maxIndex + 1) + " at " + fmt(stats.maxA, 1) + " A";
+
+  return {
+    key: names.join("|"),
+    headline: "WireView Pro II fault",
+    body: body
+  };
+}
+
+// Argv for `omarchy-notification-send`. Critical urgency stays on screen
+// (omarchy.notifications duration 0) and omarchy-action bypasses DND.
+function notifyCommand(alert) {
+  if (!alert) return [];
+  return [
+    "omarchy-notification-send",
+    "-u", "critical",
+    "-g", "\u26A1",
+    "--exec", "omarchy-shell shell summon luca.wireview-pro2 '{}'",
+    String(alert.headline || "WireView Pro II fault"),
+    String(alert.body || "")
+  ];
 }
 
 function fmt(value, digits) {
@@ -230,6 +263,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     parseLine, formatWatts, labelText, tooltipText, stateLine, appLine,
     hasSensors, hasLiveFault, fmt, fmtTemp, fmtFan, fmtFault, fmtFaultNames,
-    namedFaults, pinStats, pinPower, imbalanceLine, pinIsHot, safeTitle
+    namedFaults,     pinStats, pinPower, imbalanceLine, pinIsHot, safeTitle,
+    faultAlert, notifyCommand
   };
 }
