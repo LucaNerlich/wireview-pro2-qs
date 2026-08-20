@@ -33,6 +33,14 @@ pub struct Status {
 }
 
 impl Status {
+    /// Creates a status indicating that no device reading or SNI title is available.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let status = Status::off();
+    /// assert!(matches!(status.state, State::Off));
+    /// ```
     pub fn off() -> Self {
         Self {
             state: State::Off,
@@ -43,13 +51,29 @@ impl Status {
         }
     }
 
-    /// Overlay the GUI process check without changing the device reading.
+    /// Sets the application-running status while preserving the device reading.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let status = Status::off().with_app_running(true);
+    /// assert!(status.app_running);
+    /// ```
     pub fn with_app_running(mut self, running: bool) -> Self {
         self.app_running = running;
         self
     }
 
-    /// Build a live status from a hwmon sensor snapshot.
+    /// Builds a live status from a hardware-monitoring sensor snapshot.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let sensors = Sensors::default();
+    /// let status = Status::from_sensors(&sensors);
+    ///
+    /// assert!(matches!(status.state, State::Live));
+    /// ```
     pub fn from_sensors(sensors: &Sensors) -> Self {
         let watts = sensors.sum_power_w;
         Self {
@@ -61,9 +85,29 @@ impl Status {
         }
     }
 
-    /// Parse a status from the app's SNI `Title` property.
+    /// Creates a status from the application's SNI title.
     ///
-    /// Returns `None` when the title does not belong to the WireView app.
+    /// Titles in the `WireView Pro II - <watts> W` format produce a live status.
+    /// Other titles beginning with `WireView Pro II` produce a status without a
+    /// reading. Missing, empty, unrelated, malformed, or non-finite readings are
+    /// rejected.
+    ///
+    /// # Arguments
+    ///
+    /// * `title` - The optional SNI title to parse.
+    ///
+    /// # Returns
+    ///
+    /// `Some` status when the title identifies the application, or `None` when it
+    /// does not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let status = Status::from_title(Some("WireView Pro II - 12.5 W"));
+    ///
+    /// assert!(status.is_some());
+    /// ```
     pub fn from_title(title: Option<&str>) -> Option<Self> {
         let title = title.map(str::trim).filter(|t| !t.is_empty())?;
 

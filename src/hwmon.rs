@@ -121,6 +121,21 @@ pub fn read_chip(chip: &Path) -> Option<Sensors> {
     read_chip_dir(&open_dir(chip)?)
 }
 
+/// Reads the available sensor values from an opened WireView chip directory.
+///
+/// The chip is considered inactive when `in0_input` is unavailable. Missing
+/// optional readings use their defined fallbacks or remain absent.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+///
+/// if let Some(dirfd) = open_dir(Path::new("/sys/class/hwmon/hwmon0")) {
+///     let sensors = read_chip_dir(&dirfd);
+///     assert!(sensors.is_some());
+/// }
+/// ```
 fn read_chip_dir(dirfd: &OwnedFd) -> Option<Sensors> {
     // The app gates "connected" on `in0_input`; treat its absence as "the
     // daemon owns the device but is not feeding this chip right now".
@@ -191,16 +206,60 @@ fn read_i64_at(dirfd: &OwnedFd, name: &str) -> Option<i64> {
     std::str::from_utf8(&buf).ok()?.trim().parse().ok()
 }
 
+/// Reads an integer entry from a directory, using a fallback when the entry cannot be read or parsed.
+///
+/// # Arguments
+///
+/// * `dirfd` - File descriptor for the directory containing the entry.
+/// * `name` - Entry name to read.
+/// * `default` - Value to use when the entry is unavailable or invalid.
+///
+/// # Returns
+///
+/// The parsed integer value, or `default` when reading or parsing fails.
+///
+/// # Examples
+///
+/// ```
+/// use std::fs::File;
+/// use std::os::fd::OwnedFd;
+///
+/// let dirfd: OwnedFd = File::open(".").unwrap().into();
+/// assert_eq!(read_int_or_at(&dirfd, "missing", 42), 42);
+/// ```
 fn read_int_or_at(dirfd: &OwnedFd, name: &str, default: i64) -> i64 {
     read_i64_at(dirfd, name).unwrap_or(default)
 }
 
-/// Millidegree / millivolt / milliamp input to the SI unit, `None` when absent.
+/// Converts a millidegree, millivolt, or milliampere reading to SI units.
+///
+/// # Returns
+///
+/// The reading divided by 1,000, or `None` when the entry is absent or invalid.
+///
+/// # Examples
+///
+/// ```no_run
+/// let value = read_milli_at(&dirfd, "in0_input");
+/// assert_eq!(value, Some(12.0));
+/// ```
 fn read_milli_at(dirfd: &OwnedFd, name: &str) -> Option<f64> {
     read_i64_at(dirfd, name).map(|v| v as f64 / 1000.0)
 }
 
-/// Microwatt hwmon power input to watts, `None` when absent/invalid.
+/// Converts a hwmon power reading from microwatts to watts.
+///
+/// # Examples
+///
+/// ```
+/// # use std::os::fd::OwnedFd;
+/// # fn example(dirfd: &OwnedFd) {
+/// let power_w = read_watts_at(dirfd, "power1_input");
+/// # let _ = power_w;
+/// # }
+/// ```
+///
+/// Returns `None` when the entry is absent or cannot be parsed.
 fn read_watts_at(dirfd: &OwnedFd, name: &str) -> Option<f64> {
     read_i64_at(dirfd, name).map(|v| v as f64 / 1_000_000.0)
 }
