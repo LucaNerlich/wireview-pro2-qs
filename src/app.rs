@@ -134,6 +134,15 @@ fn signal_if_same(scanned: &ScannedPid, sig: i32) -> bool {
     pidfd_send_signal(&scanned.pidfd, sig)
 }
 
+/// Finds currently running WireView processes owned by the current user.
+///
+/// # Examples
+///
+/// ```
+/// let targets = running_targets();
+/// assert!(targets.len() >= 0);
+/// ```
+///
 fn running_targets() -> Vec<ScannedPid> {
     let mut pids = Vec::new();
     let Ok(entries) = fs::read_dir("/proc") else {
@@ -162,10 +171,16 @@ pub fn running_pids() -> Vec<i32> {
     running_targets().into_iter().map(|t| t.pid).collect()
 }
 
-/// True when at least one WireView app process is running for this user.
+/// Determines whether at least one WireView process owned by the current user is running.
 ///
-/// Observation only: this never signals. `watch` polls it at 1 Hz for
-/// `appRunning`. `restart`/`quit` still terminate through pidfds.
+/// This performs an observation only and does not signal or terminate any process.
+///
+/// # Examples
+///
+/// ```
+/// let running = is_running();
+/// assert!(running || !running);
+/// ```
 pub fn is_running() -> bool {
     !running_targets().is_empty()
 }

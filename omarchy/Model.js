@@ -1,5 +1,9 @@
 // Pure parsing/formatting shared by BarWidget.qml and Panel.qml.
-// Kept in plain JS so node can exercise it without a QML engine.
+/**
+ * Parse a JSON status line into a normalized device status object.
+ * @param {*} line - The input containing a JSON-encoded status.
+ * @return {Object|null} The normalized status for `live`, `na`, or `off` states, or `null` for invalid input.
+ */
 
 function parseLine(line) {
   var text = String(line || "").trim();
@@ -52,6 +56,11 @@ function labelText(status) {
   return "\u26A1 off";
 }
 
+/**
+ * Builds tooltip text describing the device status, faults, sensor conditions, and app action.
+ * @param {Object|null|undefined} status - The parsed device status to describe.
+ * @return {string} The formatted tooltip text.
+ */
 function tooltipText(status) {
   if (!status) return "WireView Pro II";
   var lines = [];
@@ -80,6 +89,11 @@ function tooltipText(status) {
   return lines.join("\n");
 }
 
+/**
+ * Formats the current device state for display.
+ * @param {Object} status - The parsed device status to describe.
+ * @return {string} A fault, power, app, or unknown status message.
+ */
 function stateLine(status) {
   if (!status) return "unknown";
   var alert = faultAlert(status);
@@ -90,6 +104,11 @@ function stateLine(status) {
   return "App not running";
 }
 
+/**
+ * Describes the application's current running state.
+ * @param {Object} status - The device status used to determine application state.
+ * @return {string} "unknown" when status is unavailable, "running" when the application is active, "daemon only" when sensors are available without the application, or "not running" otherwise.
+ */
 function appLine(status) {
   if (!status) return "unknown";
   if (status.appRunning) return "running";
@@ -97,20 +116,33 @@ function appLine(status) {
   return "not running";
 }
 
-// True when the backend supplied a full hwmon sensor snapshot.
+/**
+ * Determines whether a status contains a complete hardware-monitoring sensor snapshot.
+ * @param {Object} status - The status object to inspect.
+ * @return {boolean} `true` if voltage and current sensor arrays are present, `false` otherwise.
+ */
 function hasSensors(status) {
   var s = status && status.sensors;
   return !!s && typeof s === "object"
     && Array.isArray(s.voltageV) && Array.isArray(s.currentA);
 }
 
+/**
+ * Determines whether a device status contains an active fault.
+ * @param {Object} status - The device status to inspect.
+ * @return {boolean} `true` if the status contains a device fault or current imbalance, `false` otherwise.
+ */
 function hasLiveFault(status) {
   return faultAlert(status) !== null;
 }
 
 // High-importance toast for omarchy.notifications (via omarchy-notification-send).
 // Live device fault bits, plus the firmware v03 pin-imbalance heuristic when
-// that bit is not already set. Returns null when nothing is alarming.
+/**
+ * Creates a notification payload for device faults or current imbalance.
+ * @param {Object} status - The device status containing sensor data.
+ * @return {Object|null} A fault notification payload, or `null` when no fault is detected.
+ */
 function faultAlert(status) {
   var sensors = status && status.sensors;
   var names = namedFaults(sensors && sensors.faultStatus);
@@ -131,7 +163,11 @@ function faultAlert(status) {
 }
 
 // Argv for `omarchy-notification-send`. Critical urgency stays on screen
-// (omarchy.notifications duration 0) and omarchy-action bypasses DND.
+/**
+ * Builds notification command arguments for a WireView Pro II alert.
+ * @param {Object|null|undefined} alert - Alert containing optional headline and body text.
+ * @returns {string[]} The notification command arguments, or an empty array when no alert is provided.
+ */
 function notifyCommand(alert) {
   if (!alert) return [];
   return [
@@ -144,6 +180,12 @@ function notifyCommand(alert) {
   ];
 }
 
+/**
+ * Formats a value to the specified number of decimal places.
+ * @param {*} value - The value to format.
+ * @param {number} digits - The number of decimal places.
+ * @return {string} The rounded value as text, or "—" for missing or invalid values.
+ */
 function fmt(value, digits) {
   if (value === null || value === undefined) return "\u2014";
   var n = Number(value);
@@ -152,6 +194,11 @@ function fmt(value, digits) {
   return String(Math.round(n * factor) / factor);
 }
 
+/**
+ * Formats a temperature value in degrees Celsius.
+ * @param {*} c - The temperature value to format.
+ * @return {string} The formatted temperature, or an em dash for missing or invalid values.
+ */
 function fmtTemp(c) {
   if (c === null || c === undefined) return "\u2014";
   var n = Number(c);
@@ -159,6 +206,11 @@ function fmtTemp(c) {
   return fmt(n, 1) + " \u00B0C";
 }
 
+/**
+ * Formats a fan duty value as a rounded percentage.
+ * @param {*} duty - The fan duty value to format.
+ * @return {string} The rounded duty percentage, or "—" when the value is missing or invalid.
+ */
 function fmtFan(duty) {
   if (duty === null || duty === undefined) return "\u2014";
   var n = Number(duty);
@@ -166,6 +218,11 @@ function fmtFan(duty) {
   return String(Math.round(n)) + " %";
 }
 
+/**
+ * Formats fault bits as a hexadecimal value.
+ * @param {*} bits - The fault bit value to format.
+ * @return {string} The uppercase hexadecimal fault value, or `none` when the value is missing, invalid, or zero.
+ */
 function fmtFault(bits) {
   if (bits === null || bits === undefined) return "none";
   var n = Number(bits);
@@ -184,6 +241,11 @@ var FAULT_NAMES = [
   { bit: 5, name: "Current Imbalance" }
 ];
 
+/**
+ * Decodes fault bits into their named faults and hexadecimal representations.
+ * @param {*} bits - The fault bitmask to decode.
+ * @return {string[]} The names of known faults and hexadecimal values for unknown bits.
+ */
 function namedFaults(bits) {
   var n = Number(bits);
   if (!isFinite(n) || n === 0) return [];
@@ -199,6 +261,11 @@ function namedFaults(bits) {
   return names;
 }
 
+/**
+ * Formats fault bit values as a comma-separated list of fault names.
+ * @param {number} bits - The fault bit values to format.
+ * @return {string} The fault names, or `none` when no faults are present.
+ */
 function fmtFaultNames(bits) {
   var names = namedFaults(bits);
   if (names.length === 0) return "none";
@@ -209,6 +276,11 @@ function fmtFaultNames(bits) {
 var IMBALANCE_MIN_A = 6;
 var IMBALANCE_SPREAD_PCT = 40;
 
+/**
+ * Calculates current statistics and identifies significant imbalance across sensor pins.
+ * @param {Object} sensors - Sensor data containing a `currentA` array.
+ * @returns {Object|null} Current extrema, their indices, percentage spread, and imbalance status, or `null` when no finite current values are available.
+ */
 function pinStats(sensors) {
   if (!sensors || !Array.isArray(sensors.currentA) || sensors.currentA.length === 0)
     return null;
@@ -235,6 +307,12 @@ function pinStats(sensors) {
   };
 }
 
+/**
+ * Determines the power for a sensor pin.
+ * @param {Object} sensors - Sensor readings, optionally including supplied per-pin power.
+ * @param {number} index - The pin index.
+ * @return {number} The supplied or calculated power in watts, or `NaN` when the readings are unavailable or invalid.
+ */
 function pinPower(sensors, index) {
   if (sensors && Array.isArray(sensors.powerW) && index < sensors.powerW.length)
     return sensors.powerW[index];
@@ -246,6 +324,11 @@ function pinPower(sensors, index) {
   return v * a;
 }
 
+/**
+ * Describes the current spread across sensor pins and identifies the highest-current pin.
+ * @param {Object} sensors - Sensor readings containing pin current data.
+ * @return {string} An imbalance or spread description, or an empty string when pin statistics are unavailable.
+ */
 function imbalanceLine(sensors) {
   var stats = pinStats(sensors);
   if (!stats) return "";
@@ -255,6 +338,12 @@ function imbalanceLine(sensors) {
   return "Spread " + pct + "% \u2014 pin " + pin + " highest";
 }
 
+/**
+ * Identifies whether a pin is the hottest pin during a current imbalance.
+ * @param {*} sensors - The sensor data containing pin-current readings.
+ * @param {number} index - The pin index to check.
+ * @return {boolean} `true` if the pin is the highest-current pin during an imbalance warning, `false` otherwise.
+ */
 function pinIsHot(sensors, index) {
   var stats = pinStats(sensors);
   return !!(stats && stats.warn && index === stats.maxIndex);

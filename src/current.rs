@@ -4,18 +4,27 @@ use zbus::blocking::Connection;
 
 use crate::{app, hwmon, sni, status::Status};
 
-/// Prefer the WireView hwmon chip (full per-pin data) when available;
-/// otherwise fall back to the app's StatusNotifierItem title (watts only).
+/// Resolves the current device status and records whether the application is running.
 ///
-/// [`Status::app_running`] is filled independently so a live chip does not
-/// imply that the WireView2 GUI is running.
+/// Device status is obtained from the WireView hwmon chip when available, with the
+/// StatusNotifierItem used as a fallback.
 ///
-/// `app::is_running` is observation-only (argv[0]+uid through a pidfd). It
-/// never signals; a recycled numeric pid cannot become a kill target here.
+/// # Examples
+///
+/// ```
+/// let status = current_status(None);
+/// ```
 pub fn current_status(conn: Option<&Connection>) -> Status {
     device_status(conn).with_app_running(app::is_running())
 }
 
+/// Determines the current device status from discovered hardware sensors or the status notifier service.
+///
+/// # Examples
+///
+/// ```
+/// let status = device_status(None);
+/// ```
 fn device_status(conn: Option<&Connection>) -> Status {
     if let Some(sensors) = hwmon::discover() {
         return Status::from_sensors(&sensors);
