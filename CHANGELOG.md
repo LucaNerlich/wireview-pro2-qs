@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-08-20
+
 ### Fixed
 
 - `restart`/`quit` deliver SIGTERM and SIGKILL with `pidfd_send_signal` on
@@ -164,6 +166,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.1.6]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.2...v1.1.3
