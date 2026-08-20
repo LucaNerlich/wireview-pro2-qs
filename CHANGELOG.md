@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-20
+
+### Changed
+
+- Added docstrings across the Rust backend helpers and the QML-side
+  `Model.js` utilities. This release does not change runtime behavior.
+
 ## [1.2.0] - 2026-08-20
 
 ### Added
@@ -191,6 +198,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.2.1]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.6...v1.2.0
 [1.1.6]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.4...v1.1.5
