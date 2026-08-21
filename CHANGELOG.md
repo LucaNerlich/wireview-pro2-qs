@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-08-21
+
+### Changed
+
+- Require Rust 1.97.1 (`rust-version`) and drop the separate 1.85 MSRV CI
+  job; every job now runs on the pinned 1.97.1 toolchain. No runtime change.
+
 ## [1.2.2] - 2026-08-21
 
 ### Changed
@@ -205,6 +212,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.2.3]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.6...v1.2.0
