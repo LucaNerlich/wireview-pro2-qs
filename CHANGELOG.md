@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.2] - 2026-08-21
+
+### Changed
+
+- The MSRV CI job now pins its check with `cargo +1.85.0` so it genuinely
+  verifies the declared minimum Rust version. Previously the repo's
+  `rust-toolchain.toml` (1.97.1) overrode the installed toolchain, so the
+  job was silently testing 1.97.1. No runtime change.
 
 ## [1.2.1] - 2026-08-20
 
@@ -198,6 +205,7 @@ static backend; fixes the findings of the 2026-08-15 code audit.
   (fmt, clippy, tests, plugin model tests, MSRV), and unit tests for status
   parsing and app process helpers.
 
+[1.2.2]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.6...v1.2.0
 [1.1.6]: https://github.com/LucaNerlich/wireview-pro2-qs/compare/v1.1.5...v1.1.6
