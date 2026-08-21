@@ -82,29 +82,87 @@ pub fn title(conn: &Connection, item: &ItemRef) -> Option<String> {
     value.try_into().ok()
 }
 
-/// The WireView item carrying the live power reading, preferring the dynamic
-/// one whose title ends in watts; falls back to the static identity item.
-pub fn find_live_item(conn: &Connection) -> Option<ItemRef> {
-    let mut fallback: Option<ItemRef> = None;
-
-    for item in registered_items(conn)? {
-        let text = title(conn, &item).unwrap_or_default();
-        if text.starts_with("WireView Pro II - ") && text.ends_with(" W") {
-            return Some(item);
-        }
-        if text.starts_with("WireView Pro II") && fallback.is_none() {
-            fallback = Some(item);
-        }
-    }
-
-    fallback
+/// Outcome of one read of the app's SNI item.
+#[derive(Debug)]
+pub enum Reading {
+    /// A WireView item answered with a title.
+    Status(Box<crate::status::Status>),
+    /// The watcher answered and lists no WireView item: the app is gone.
+    Absent,
+    /// The bus or a property call failed; the app's presence is unknown.
+    Unavailable,
 }
 
-/// The current status read straight from the app's SNI item.
-pub fn current_status(conn: &Connection) -> Option<crate::status::Status> {
-    let item = find_live_item(conn)?;
-    let text = title(conn, &item);
-    crate::status::Status::from_title(text.as_deref())
+/// Reads the app's SNI item, caching the live item between polls.
+///
+/// Steady state therefore costs a single property `Get` on the cached item
+/// instead of querying every tray application each tick; full discovery
+/// runs only when the cache misses or the cached item stops answering.
+#[derive(Debug)]
+pub struct SniWatcher {
+    conn: Connection,
+    cached: Option<ItemRef>,
+}
+
+impl SniWatcher {
+    pub fn new(conn: Connection) -> Self {
+        Self { conn, cached: None }
+    }
+
+    /// Hands back the underlying connection (used when dropping a broken
+    /// one before reconnecting).
+    pub fn into_connection(self) -> Connection {
+        self.conn
+    }
+
+    /// One status read. A cached item whose `Title` read fails or no longer
+    /// parses falls through to full discovery, which distinguishes "the app
+    /// is gone" ([`Reading::Absent`]) from "the bus is broken"
+    /// ([`Reading::Unavailable`]).
+    pub fn read_status(&mut self) -> Reading {
+        if let Some(item) = self.cached.clone()
+            && let Some(text) = title(&self.conn, &item)
+            && let Some(status) = crate::status::Status::from_title(Some(&text))
+        {
+            return Reading::Status(Box::new(status));
+        }
+        self.discover()
+    }
+
+    /// Scan every registered item. Prefers the dynamic item whose title ends
+    /// in watts; falls back to the static identity item.
+    fn discover(&mut self) -> Reading {
+        let Some(items) = registered_items(&self.conn) else {
+            return Reading::Unavailable;
+        };
+        let mut live: Option<(ItemRef, String)> = None;
+        let mut fallback: Option<(ItemRef, String)> = None;
+        for item in items {
+            let Some(text) = title(&self.conn, &item) else {
+                continue;
+            };
+            if text.starts_with("WireView Pro II - ") && text.ends_with(" W") {
+                live = Some((item, text));
+                break;
+            }
+            if text.starts_with("WireView Pro II") && fallback.is_none() {
+                fallback = Some((item, text));
+            }
+        }
+        match live.or(fallback) {
+            None => {
+                self.cached = None;
+                Reading::Absent
+            }
+            Some((item, text)) => {
+                self.cached = Some(item);
+                match crate::status::Status::from_title(Some(&text)) {
+                    Some(status) => Reading::Status(Box::new(status)),
+                    None => Reading::Absent,
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -601,7 +601,10 @@ mod tests {
         let pid = child.id() as i32;
 
         // Verify the sleep process is not identified as the app
-        assert!(identify(pid).is_none(), "sleep must not identify as the app");
+        assert!(
+            identify(pid).is_none(),
+            "sleep must not identify as the app"
+        );
 
         // If youngest_age returns Some, it must not be based on the sleep process.
         // We can't assert it's None because a real app might be running, but we

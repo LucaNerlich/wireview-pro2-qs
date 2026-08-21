@@ -31,39 +31,42 @@ fn terminate_all() {
 }
 
 /// Ensure the app is running and its window is visible.
-pub fn open() -> OpenOutcome {
+///
+/// Returns `Err` when a fresh instance could not be spawned (e.g. the app
+/// binary is missing), so callers can surface the failure.
+pub fn open() -> std::io::Result<OpenOutcome> {
     if !app::is_running() {
-        app::launch().ok();
-        return OpenOutcome::Launched;
+        app::launch()?;
+        return Ok(OpenOutcome::Launched);
     }
 
     match app::window_address() {
         Some(address) => {
             app::focus_window(&address);
-            OpenOutcome::Focused
+            Ok(OpenOutcome::Focused)
         }
         None => {
             // No hyprctl/window: if window management is missing entirely we
             // cannot improve on the running app, so leave it alone.
             if !has_hyprctl() {
-                return OpenOutcome::LeftAlone;
+                return Ok(OpenOutcome::LeftAlone);
             }
             // A freshly launched instance needs a moment to map its window;
             // a second click during startup must not kill and relaunch it.
             if app::youngest_age().is_some_and(|age| age < FRESH_INSTANCE_AGE) {
-                return OpenOutcome::WaitingForWindow;
+                return Ok(OpenOutcome::WaitingForWindow);
             }
             terminate_all();
-            app::launch().ok();
-            OpenOutcome::Restarted
+            app::launch()?;
+            Ok(OpenOutcome::Restarted)
         }
     }
 }
 
 /// Kill every WireView instance and start a fresh one.
-pub fn restart() {
+pub fn restart() -> std::io::Result<()> {
     terminate_all();
-    app::launch().ok();
+    app::launch()
 }
 
 /// Kill every WireView instance.

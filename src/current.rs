@@ -4,10 +4,19 @@ use zbus::blocking::Connection;
 
 use crate::{app, hwmon, sni, status::Status};
 
-/// Resolves the current device status and records whether the application is running.
-///
-/// Device status is obtained from the WireView hwmon chip when available, with the
-/// StatusNotifierItem used as a fallback.
+/// Outcome of one resolution pass.
+#[derive(Debug)]
+pub enum Poll {
+    /// A source reported a reading (or the app's no-reading state).
+    Status(Box<Status>),
+    /// No hwmon chip and no WireView SNI item: the app is gone.
+    Absent,
+    /// The session bus failed; the device state is unknown this tick.
+    Unavailable,
+}
+
+/// One-shot resolution for `status`: an unknown bus state collapses to
+/// `off`, and the app-running flag is overlaid on every outcome.
 ///
 /// # Examples
 ///
@@ -15,20 +24,31 @@ use crate::{app, hwmon, sni, status::Status};
 /// let status = current_status(None);
 /// ```
 pub fn current_status(conn: Option<&Connection>) -> Status {
-    device_status(conn).with_app_running(app::is_running())
+    let mut watcher = conn.map(|c| sni::SniWatcher::new(c.clone()));
+    match resolve(watcher.as_mut()) {
+        Poll::Status(status) => *status,
+        Poll::Absent | Poll::Unavailable => Status::off(),
+    }
+    .with_app_running(app::is_running())
 }
 
-/// Determines the current device status from discovered hardware sensors or the status notifier service.
-///
-/// # Examples
-///
-/// ```
-/// let status = device_status(None);
-/// ```
-fn device_status(conn: Option<&Connection>) -> Status {
+/// Streaming resolution for `watch`: distinguishes "the app is gone"
+/// ([`Poll::Absent`]) from "the bus is broken" ([`Poll::Unavailable`]) so a
+/// transient DBus error does not have to emit a false off line.
+pub fn poll(watcher: Option<&mut sni::SniWatcher>) -> Poll {
+    resolve(watcher)
+}
+
+fn resolve(watcher: Option<&mut sni::SniWatcher>) -> Poll {
     if let Some(sensors) = hwmon::discover() {
-        return Status::from_sensors(&sensors);
+        return Poll::Status(Box::new(Status::from_sensors(&sensors)));
     }
-    conn.and_then(sni::current_status)
-        .unwrap_or_else(Status::off)
+    let Some(watcher) = watcher else {
+        return Poll::Unavailable;
+    };
+    match watcher.read_status() {
+        sni::Reading::Status(status) => Poll::Status(status),
+        sni::Reading::Absent => Poll::Absent,
+        sni::Reading::Unavailable => Poll::Unavailable,
+    }
 }
