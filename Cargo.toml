@@ -2,7 +2,7 @@
 name = "wireview-pro2-qs"
 version = "1.2.2"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.97.1"
 license = "Apache-2.0"
 description = "Omarchy Quattro bar widget backend for the Thermal Grizzly WireView Pro II GPU power monitor"
 readme = "README.md"

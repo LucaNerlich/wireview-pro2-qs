@@ -111,23 +111,21 @@ impl Status {
     pub fn from_title(title: Option<&str>) -> Option<Self> {
         let title = title.map(str::trim).filter(|t| !t.is_empty())?;
 
-        if let Some(rest) = title.strip_prefix("WireView Pro II - ") {
-            if let Some(number) = rest.strip_suffix(" W") {
-                if let Ok(watts) = number.parse::<f64>() {
-                    // "NaN" / "inf" parse as f64 but are not real readings;
-                    // accepting them would serialize NaN as null and make
-                    // the watch stream re-emit the line every poll.
-                    if watts.is_finite() {
-                        return Some(Self {
-                            state: State::Live,
-                            watts: Some(watts),
-                            title: Some(title.to_string()),
-                            app_running: false,
-                            sensors: None,
-                        });
-                    }
-                }
-            }
+        // "NaN" / "inf" parse as f64 but are not real readings; accepting
+        // them would serialize NaN as null and make the watch stream re-emit
+        // the line every poll.
+        if let Some(rest) = title.strip_prefix("WireView Pro II - ")
+            && let Some(number) = rest.strip_suffix(" W")
+            && let Ok(watts) = number.parse::<f64>()
+            && watts.is_finite()
+        {
+            return Some(Self {
+                state: State::Live,
+                watts: Some(watts),
+                title: Some(title.to_string()),
+                app_running: false,
+                sensors: None,
+            });
         }
 
         if title.starts_with("WireView Pro II") {
