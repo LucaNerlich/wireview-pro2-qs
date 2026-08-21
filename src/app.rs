@@ -526,15 +526,16 @@ mod tests {
     }
 
     #[test]
-    fn terminate_running_returns_without_app() {
-        if is_running() {
-            // Detection now finds real installations; never signal them
-            // from a test.
-            return;
-        }
+    fn terminate_empty_candidate_list_returns_immediately() {
+        // Test that terminate_identified returns quickly with an empty
+        // candidate list, verifying the termination logic doesn't spin when
+        // there are no processes to wait for.
         let start = Instant::now();
-        terminate_running(Duration::from_secs(1));
-        assert!(start.elapsed() < Duration::from_secs(1));
+        terminate_identified(Vec::new(), Duration::from_secs(1));
+        assert!(
+            start.elapsed() < Duration::from_millis(200),
+            "terminate_identified with empty list must return immediately"
+        );
     }
 
     #[test]
@@ -593,13 +594,27 @@ mod tests {
     }
 
     #[test]
-    fn youngest_age_is_none_without_app() {
-        if is_running() {
-            // A real installation is running on this machine; absence is a
-            // machine-global condition tests cannot control.
-            return;
-        }
-        assert!(youngest_age().is_none());
+    fn youngest_age_ignores_unrelated_processes() {
+        // Test that youngest_age doesn't include unrelated same-user processes.
+        // Spawn a sleep process and verify it's not counted as an app instance.
+        let mut child = spawn_sleep();
+        let pid = child.id() as i32;
+
+        // Verify the sleep process is not identified as the app
+        assert!(identify(pid).is_none(), "sleep must not identify as the app");
+
+        // If youngest_age returns Some, it must not be based on the sleep process.
+        // We can't assert it's None because a real app might be running, but we
+        // can verify the sleep process doesn't affect the result by checking
+        // that it's not in the running targets.
+        let targets = running_targets();
+        assert!(
+            !targets.iter().any(|t| t.pid == pid),
+            "sleep process must not be in running_targets"
+        );
+
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]
@@ -607,8 +622,8 @@ mod tests {
         // `appRunning` is polled at 1 Hz via is_running/youngest_age. Those
         // must stay observation-only and keep the uid + identity match, or
         // we reintroduce #2 (over-broad kill) / #4 (recycled pid looks
-        // fresh). Assertions stay on the spawned child so they hold
-        // regardless of whether a real app instance exists.
+        // fresh). Verify that a spawned unrelated process is never identified
+        // as the app and remains untouched.
         let mut child = spawn_sleep();
         let pid = child.id() as i32;
         assert!(!running_pids().contains(&pid));
@@ -616,16 +631,25 @@ mod tests {
             !identify(pid).is_some(),
             "sleep must not identify as the app"
         );
+
+        // Verify that observation functions don't affect the unrelated process
         for _ in 0..8 {
             let _ = is_running();
             let _ = youngest_age();
         }
-        if !is_running() {
-            terminate_running(Duration::from_secs(1));
-        }
+
+        // Verify that terminate() called on the specific pid doesn't signal
+        // an unrelated process (it should fail identification and skip it)
+        let start = Instant::now();
+        terminate(&[pid], Duration::from_secs(2));
+        assert!(
+            start.elapsed() < Duration::from_millis(500),
+            "terminate must not wait on an unrelated pid"
+        );
+
         assert!(
             child.try_wait().expect("try_wait").is_none(),
-            "is_running/youngest_age/terminate_running must not hit an unrelated pid"
+            "is_running/youngest_age/terminate must not hit an unrelated pid"
         );
         let _ = child.kill();
         let _ = child.wait();

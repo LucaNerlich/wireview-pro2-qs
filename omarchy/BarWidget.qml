@@ -94,24 +94,28 @@ BarWidget {
   }
 
   function maybeNotify(status) {
-    var alert = Model.faultAlert(status)
-    if (!alert) {
-      root.faultFreeStreak += 1
-      if (root.faultFreeStreak >= root.faultClearStreak) {
-        root.lastFaultKey = ""
-        root.pendingNotify = null
-      }
-      return
+    var currentState = {
+      lastFaultKey: root.lastFaultKey,
+      faultFreeStreak: root.faultFreeStreak,
+      lastNotifyAt: root.lastNotifyAt
     }
-    root.faultFreeStreak = 0
-    var key = String(alert.key)
-    if (key === root.lastFaultKey) return
-    var now = Date.now()
-    if (now - root.lastNotifyAt < root.notifyCooldownMs) return
-    root.lastFaultKey = key
-    root.lastNotifyAt = now
-    root.pendingNotify = alert
-    root.flushNotify()
+    var newState = Model.computeNotifyState(
+      status,
+      currentState,
+      root.faultClearStreak,
+      root.notifyCooldownMs,
+      Date.now()
+    )
+    root.lastFaultKey = newState.lastFaultKey
+    root.faultFreeStreak = newState.faultFreeStreak
+    root.lastNotifyAt = newState.lastNotifyAt
+    if (newState.shouldNotify) {
+      root.pendingNotify = newState.alert
+      root.flushNotify()
+    } else if (!Model.faultAlert(status)) {
+      // Clear pending notification when no fault is present
+      root.pendingNotify = null
+    }
   }
 
   function flushNotify() {
@@ -129,9 +133,9 @@ BarWidget {
     root.appRunning = false
     root.watts = NaN
     root.sensors = null
-    root.lastFaultKey = ""
-    root.faultFreeStreak = 0
-    root.lastNotifyAt = 0
+    // Preserve notification state (lastNotifyAt, faultFreeStreak, lastFaultKey)
+    // across transient watcher exits and failed starts. They are only reset
+    // during genuine first-time initialization (Component.onCompleted path).
     root.pendingNotify = null
   }
 
