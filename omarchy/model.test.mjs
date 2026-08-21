@@ -197,11 +197,18 @@ eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).headline, "WireView Pro 
 eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).body, "Over-Current", "ocp body");
 eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).key, "Over-Current", "ocp key");
 eq(Model.faultAlert({ sensors: { faultStatus: 0x20, currentA: [9, 1, 1, 1, 1, 1] } }).key,
-  "Current Imbalance", "device bit is not duplicated");
+  "Current Imbalance@0", "device bit is not duplicated");
 assert.ok(
   Model.faultAlert({ sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }).body.indexOf("pin 1") !== -1,
   "computed imbalance names the hot pin"
 );
+assert.ok(
+  Model.faultAlert({ sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }).key !==
+    Model.faultAlert({ sensors: { faultStatus: 0, currentA: [1, 1, 1, 1, 1, 9] } }).key,
+  "a moved hot pin changes the alert key"
+);
+eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).key.indexOf("@"), -1,
+  "non-imbalance alerts carry no pin suffix");
 
 const notify = Model.notifyCommand(Model.faultAlert({ sensors: { faultStatus: 0x10 } }));
 eq(notify[0], "omarchy-notification-send", "goes through omarchy.notifications");

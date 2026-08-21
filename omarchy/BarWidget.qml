@@ -67,6 +67,13 @@ BarWidget {
   function toggle() { if (panelItem) panelItem.toggle() }
 
   property string lastFaultKey: ""
+  // Hysteresis against threshold flapping: a fault must stay clear for this
+  // many consecutive readings before the same fault may notify again, and
+  // any two notifications are separated by at least notifyCooldownMs.
+  readonly property int faultClearStreak: 3
+  readonly property int notifyCooldownMs: 60000
+  property int faultFreeStreak: 0
+  property double lastNotifyAt: 0
   property var pendingNotify: null
 
   function applyLine(line) {
@@ -88,13 +95,21 @@ BarWidget {
 
   function maybeNotify(status) {
     var alert = Model.faultAlert(status)
-    var key = alert ? String(alert.key) : ""
-    if (key === root.lastFaultKey) return
-    root.lastFaultKey = key
     if (!alert) {
-      root.pendingNotify = null
+      root.faultFreeStreak += 1
+      if (root.faultFreeStreak >= root.faultClearStreak) {
+        root.lastFaultKey = ""
+        root.pendingNotify = null
+      }
       return
     }
+    root.faultFreeStreak = 0
+    var key = String(alert.key)
+    if (key === root.lastFaultKey) return
+    var now = Date.now()
+    if (now - root.lastNotifyAt < root.notifyCooldownMs) return
+    root.lastFaultKey = key
+    root.lastNotifyAt = now
     root.pendingNotify = alert
     root.flushNotify()
   }
@@ -115,6 +130,8 @@ BarWidget {
     root.watts = NaN
     root.sensors = null
     root.lastFaultKey = ""
+    root.faultFreeStreak = 0
+    root.lastNotifyAt = 0
     root.pendingNotify = null
   }
 

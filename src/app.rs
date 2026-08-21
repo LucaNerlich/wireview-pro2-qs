@@ -4,12 +4,23 @@ use std::ffi::CString;
 use std::fs::{self, File};
 use std::io::Read;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
 /// Path of the WireView2 app binary this widget launches and monitors.
 pub const APP_BINARY: &str = "/usr/bin/wireview-linux";
+
+/// `APP_BINARY` with symlinks resolved. On standard installs it is a symlink
+/// to the real binary (e.g. `/usr/lib/wireview-linux/WireView2`), which is
+/// also what `.desktop` files and autostart execute, so `/proc/<pid>/exe`
+/// points at the target rather than at `APP_BINARY` itself.
+fn canonical_app_binary() -> &'static Path {
+    static CANON: OnceLock<PathBuf> = OnceLock::new();
+    CANON.get_or_init(|| fs::canonicalize(APP_BINARY).unwrap_or_else(|_| PathBuf::from(APP_BINARY)))
+}
 
 /// True when `cmdline` belongs to the WireView app: the process must have
 /// been started as the app binary itself (argv[0] is the exact binary path).
@@ -21,6 +32,20 @@ fn is_wireview_cmdline(cmdline: &[u8]) -> bool {
         .next()
         .filter(|field| !field.is_empty())
         .is_some_and(|field| field == APP_BINARY.as_bytes())
+}
+
+/// True when the `/proc/<pid>/exe` link target is the app binary. The kernel
+/// resolves the link to the real executable, so instances launched through
+/// the `APP_BINARY` symlink, a `.desktop` file, or autostart all match even
+/// though their argv[0] differs from [`APP_BINARY`].
+fn exe_is_app(link: &[u8], app: &Path) -> bool {
+    // An unlinked-but-running binary gets a " (deleted)" suffix; strip it so
+    // a freshly replaced install still matches while the old code runs.
+    let link = link.strip_suffix(b" (deleted)").unwrap_or(link);
+    let Ok(path) = std::str::from_utf8(link) else {
+        return false;
+    };
+    Path::new(path) == app
 }
 
 /// A pid pinned by its `/proc/<pid>` directory fd, captured at scan time.
@@ -80,9 +105,35 @@ fn read_proc_entry(pidfd: &OwnedFd, name: &str) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// Reads a symlink inside the pinned `/proc/<pid>` directory (e.g. `exe`).
+fn readlink_entry(pidfd: &OwnedFd, name: &str) -> Option<Vec<u8>> {
+    let name = CString::new(name).ok()?;
+    let mut buf = [0u8; 4096];
+    // SAFETY: pidfd is an open directory, name is a valid C string, and buf
+    // is writable for its full length.
+    let n = unsafe {
+        libc::readlinkat(
+            pidfd.as_raw_fd(),
+            name.as_ptr(),
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+        )
+    };
+    if n < 0 {
+        return None;
+    }
+    let n = usize::try_from(n).ok()?;
+    if n >= buf.len() {
+        return None;
+    }
+    Some(buf[..n].to_vec())
+}
+
 /// True when `pidfd` (a `/proc/<pid>` directory) belongs to the current
-/// user and its argv[0] is the app binary. Reads go through the directory
-/// fd so they cannot observe a later occupant of the same pid.
+/// user and is the WireView app: either argv[0] is the exact binary path or
+/// the kernel-resolved `/proc/<pid>/exe` target equals the canonical app
+/// binary. Reads go through the directory fd so they cannot observe a later
+/// occupant of the same pid.
 fn is_wireview_dir(pidfd: &OwnedFd) -> bool {
     // Other users' processes can never be signalled; skip them so the
     // termination loop does not spin on EPERM until its timeout.
@@ -90,10 +141,12 @@ fn is_wireview_dir(pidfd: &OwnedFd) -> bool {
     if owner_uid(pidfd) != Some(unsafe { libc::getuid() }) {
         return false;
     }
-    let Some(cmdline) = read_proc_entry(pidfd, "cmdline") else {
-        return false;
-    };
-    is_wireview_cmdline(&cmdline)
+    if let Some(cmdline) = read_proc_entry(pidfd, "cmdline")
+        && is_wireview_cmdline(&cmdline)
+    {
+        return true;
+    }
+    readlink_entry(pidfd, "exe").is_some_and(|link| exe_is_app(&link, canonical_app_binary()))
 }
 
 /// Pin `pid` when it still looks like the app. The returned pidfd is what
@@ -333,6 +386,7 @@ pub fn focus_window(address: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::ffi::OsStrExt;
 
     #[test]
     fn own_process_is_not_wireview() {
@@ -368,6 +422,36 @@ mod tests {
     fn cmdline_rejects_empty() {
         assert!(!is_wireview_cmdline(b"\0"));
         assert!(!is_wireview_cmdline(b""));
+    }
+
+    #[test]
+    fn exe_link_matches_canonical_app_binary() {
+        let base = std::env::temp_dir().join("wv-app-exe-match");
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        let real = base.join("WireView2");
+        fs::write(&real, b"elf").unwrap();
+        let link = base.join("wireview-linux");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let canon = fs::canonicalize(&link).unwrap();
+
+        assert!(exe_is_app(real.as_os_str().as_bytes(), &canon));
+        assert!(!exe_is_app(link.as_os_str().as_bytes(), &canon));
+        assert!(!exe_is_app(b"/usr/bin/vim", &canon));
+        assert!(!exe_is_app(b"/usr/bin/wireview-linux-helper", &canon));
+
+        let deleted = format!("{} (deleted)", real.display());
+        assert!(exe_is_app(deleted.as_bytes(), &canon));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn exe_match_uses_canonicalized_app_binary() {
+        // APP_BINARY is a symlink on standard installs; the canonical form
+        // must be compared, not the literal constant.
+        let canon = canonical_app_binary();
+        assert!(canon.is_absolute());
+        assert_ne!(canon, Path::new("/definitely/not/the/app"));
     }
 
     #[test]
@@ -443,6 +527,11 @@ mod tests {
 
     #[test]
     fn terminate_running_returns_without_app() {
+        if is_running() {
+            // Detection now finds real installations; never signal them
+            // from a test.
+            return;
+        }
         let start = Instant::now();
         terminate_running(Duration::from_secs(1));
         assert!(start.elapsed() < Duration::from_secs(1));
@@ -505,29 +594,39 @@ mod tests {
 
     #[test]
     fn youngest_age_is_none_without_app() {
+        if is_running() {
+            // A real installation is running on this machine; absence is a
+            // machine-global condition tests cannot control.
+            return;
+        }
         assert!(youngest_age().is_none());
     }
 
     #[test]
     fn watch_path_does_not_treat_or_signal_unrelated_same_user_process() {
         // `appRunning` is polled at 1 Hz via is_running/youngest_age. Those
-        // must stay observation-only and keep the argv[0]+uid match, or we
-        // reintroduce #2 (over-broad kill) / #4 (recycled pid looks fresh).
+        // must stay observation-only and keep the uid + identity match, or
+        // we reintroduce #2 (over-broad kill) / #4 (recycled pid looks
+        // fresh). Assertions stay on the spawned child so they hold
+        // regardless of whether a real app instance exists.
         let mut child = spawn_sleep();
-        assert!(!is_running());
-        assert!(youngest_age().is_none());
-        assert!(running_pids().is_empty());
+        let pid = child.id() as i32;
+        assert!(!running_pids().contains(&pid));
+        assert!(
+            !identify(pid).is_some(),
+            "sleep must not identify as the app"
+        );
         for _ in 0..8 {
             let _ = is_running();
             let _ = youngest_age();
         }
-        terminate_running(Duration::from_secs(1));
+        if !is_running() {
+            terminate_running(Duration::from_secs(1));
+        }
         assert!(
             child.try_wait().expect("try_wait").is_none(),
             "is_running/youngest_age/terminate_running must not hit an unrelated pid"
         );
-        assert!(!is_running());
-        assert!(youngest_age().is_none());
         let _ = child.kill();
         let _ = child.wait();
     }

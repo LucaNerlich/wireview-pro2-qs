@@ -156,7 +156,10 @@ function faultAlert(status) {
     body += " — pin " + (stats.maxIndex + 1) + " at " + fmt(stats.maxA, 1) + " A";
 
   return {
-    key: names.join("|"),
+    // The hot-pin index is part of the key so that a moved hotspot (e.g.
+    // pin 1 -> pin 3) re-notifies once instead of being swallowed as an
+    // unchanged "Current Imbalance" alert.
+    key: names.join("|") + (stats && stats.warn ? "@" + stats.maxIndex : ""),
     headline: "WireView Pro II fault",
     body: body
   };
