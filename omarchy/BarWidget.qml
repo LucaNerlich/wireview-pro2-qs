@@ -121,10 +121,48 @@ BarWidget {
   function flushNotify() {
     if (notifyProc.running || !root.pendingNotify) return
     var alert = root.pendingNotify
-    root.pendingNotify = null
     var argv = Model.notifyCommand(alert)
-    if (!argv.length) return
+    if (!argv.length) {
+      root.pendingNotify = null
+      return
+    }
     notifyProc.command = argv
+    notifyProc.running = true
+    if (notifyProc.running) {
+      // Accepted for delivery; the queue slot is free again.
+      root.pendingNotify = null
+    } else {
+      // omarchy-notification-send is missing or refused to spawn: fall back
+      // to plain notify-send so a critical fault alert is not lost, and log
+      // if even that path is unavailable.
+      root.deliverFallbackNotify(alert)
+    }
+  }
+
+  function deliverFallbackNotify(alert) {
+    var argv = [
+      "notify-send",
+      "-u", "critical",
+      "-a", "WireView Pro II",
+      String(alert.headline || "WireView Pro II fault"),
+      String(alert.body || "")
+    ]
+    notifyProc.command = argv
+    notifyProc.running = true
+    root.pendingNotify = null
+    if (!notifyProc.running)
+      console.warn("wireview-pro2: cannot deliver fault notification:", alert.body || "")
+  }
+
+  function warnActionFailed(action, exitCode) {
+    if (notifyProc.running) return
+    notifyProc.command = [
+      "notify-send",
+      "-u", "normal",
+      "-a", "WireView Pro II",
+      "WireView Pro II",
+      action + " failed (exit " + exitCode + ")"
+    ]
     notifyProc.running = true
   }
 
@@ -227,6 +265,14 @@ BarWidget {
     onStarted: {
       actionProc.startedOnce = true
       root.actionFailures = 0
+    }
+    onExited: function(exitCode) {
+      // The backend exits non-zero when an action could not be carried out
+      // (app missing, spawn refused); surface it instead of failing silently.
+      var action = root.pendingAction
+      root.pendingAction = ""
+      if (exitCode === 0 || action === "") return
+      root.warnActionFailed(action, exitCode)
     }
     onRunningChanged: {
       if (actionProc.running) return

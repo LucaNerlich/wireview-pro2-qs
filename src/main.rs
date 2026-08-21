@@ -49,9 +49,20 @@ fn main() {
         Command::Watch => watch::watch(),
         Command::Open => {
             let outcome = open::open();
-            println!("{outcome:?}");
+            match outcome {
+                Ok(value) => println!("{value:?}"),
+                Err(error) => {
+                    eprintln!("open failed: {error}");
+                    std::process::exit(1);
+                }
+            }
         }
-        Command::Restart => open::restart(),
+        Command::Restart => {
+            if let Err(error) = open::restart() {
+                eprintln!("restart failed: {error}");
+                std::process::exit(1);
+            }
+        }
         Command::Quit => open::quit(),
     }
 }

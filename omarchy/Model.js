@@ -386,7 +386,20 @@ function computeNotifyState(status, state, faultClearStreak, notifyCooldownMs, n
     return newState;
   }
 
-  if (nowMs - state.lastNotifyAt < notifyCooldownMs) {
+  // A genuinely new fault family (base name before "@") is urgent news and
+  // bypasses the cooldown; only the very first notification ever (and a
+  // moved hot pin within one family) must wait it out.
+  var base = key.split("@")[0];
+  var lastBase = String(state.lastFaultKey || "").split("@")[0];
+  if (state.lastNotifyAt > 0 && lastBase !== "" && base !== lastBase) {
+    newState.lastFaultKey = key;
+    newState.lastNotifyAt = nowMs;
+    newState.shouldNotify = true;
+    newState.alert = alert;
+    return newState;
+  }
+
+  if (state.lastNotifyAt > 0 && nowMs - state.lastNotifyAt < notifyCooldownMs) {
     return newState;
   }
 
