@@ -197,16 +197,78 @@ eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).headline, "WireView Pro 
 eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).body, "Over-Current", "ocp body");
 eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).key, "Over-Current", "ocp key");
 eq(Model.faultAlert({ sensors: { faultStatus: 0x20, currentA: [9, 1, 1, 1, 1, 1] } }).key,
-  "Current Imbalance", "device bit is not duplicated");
+  "Current Imbalance@0", "device bit is not duplicated");
 assert.ok(
   Model.faultAlert({ sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }).body.indexOf("pin 1") !== -1,
   "computed imbalance names the hot pin"
 );
+assert.ok(
+  Model.faultAlert({ sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } }).key !==
+    Model.faultAlert({ sensors: { faultStatus: 0, currentA: [1, 1, 1, 1, 1, 9] } }).key,
+  "a moved hot pin changes the alert key"
+);
+eq(Model.faultAlert({ sensors: { faultStatus: 0x04 } }).key.indexOf("@"), -1,
+  "non-imbalance alerts carry no pin suffix");
 
 const notify = Model.notifyCommand(Model.faultAlert({ sensors: { faultStatus: 0x10 } }));
 eq(notify[0], "omarchy-notification-send", "goes through omarchy.notifications");
 assert.ok(notify.indexOf("critical") !== -1, "critical urgency");
 assert.ok(notify.indexOf("omarchy-shell shell summon luca.wireview-pro2 '{}'") !== -1, "click opens panel");
 eq(Model.notifyCommand(null), [], "null alert is empty argv");
+
+// computeNotifyState (notification state machine extracted from BarWidget.maybeNotify)
+
+const ocpStatus = { sensors: { faultStatus: 0x04 } };
+const imbalanceStatus = { sensors: { faultStatus: 0, currentA: [9, 1, 1, 1, 1, 1] } };
+const clearStatus = { sensors: { faultStatus: 0, currentA: [1.5, 1.5, 1.5, 1.5, 1.5, 1.5] } };
+
+// (a) notification suppression after three consecutive "clear" readings
+let state1 = { lastFaultKey: "Over-Current", faultFreeStreak: 0, lastNotifyAt: 1000 };
+let next1 = Model.computeNotifyState(clearStatus, state1, 3, 60000, 2000);
+eq(next1.faultFreeStreak, 1, "first clear increments streak");
+eq(next1.lastFaultKey, "Over-Current", "key not cleared until threshold");
+eq(next1.shouldNotify, false, "no notification on clear");
+
+next1 = Model.computeNotifyState(clearStatus, next1, 3, 60000, 3000);
+eq(next1.faultFreeStreak, 2, "second clear increments streak");
+eq(next1.lastFaultKey, "Over-Current", "key still not cleared");
+
+next1 = Model.computeNotifyState(clearStatus, next1, 3, 60000, 4000);
+eq(next1.faultFreeStreak, 3, "third clear increments streak");
+eq(next1.lastFaultKey, "", "key cleared after 3 consecutive clears");
+
+// (b) 60-second cooldown between notifications
+let state2 = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 5000 };
+let next2 = Model.computeNotifyState(ocpStatus, state2, 3, 60000, 10000);
+eq(next2.shouldNotify, false, "notification suppressed during cooldown");
+eq(next2.lastFaultKey, "", "key not updated during cooldown");
+
+next2 = Model.computeNotifyState(ocpStatus, state2, 3, 60000, 65001);
+eq(next2.shouldNotify, true, "notification fires after cooldown");
+eq(next2.lastFaultKey, "Over-Current", "key updated after cooldown");
+eq(next2.alert.key, "Over-Current", "alert payload present");
+
+// (c) notification firing again when the fault key changes
+let state3 = { lastFaultKey: "Over-Current", faultFreeStreak: 0, lastNotifyAt: 70000 };
+let next3 = Model.computeNotifyState(ocpStatus, state3, 3, 60000, 70500);
+eq(next3.shouldNotify, false, "same fault key suppressed immediately");
+
+next3 = Model.computeNotifyState(imbalanceStatus, state3, 3, 60000, 70500);
+eq(next3.shouldNotify, true, "different fault key fires immediately");
+eq(next3.lastFaultKey, "Current Imbalance@0", "new key recorded");
+
+// (d) watcher-state reset behavior: after finding 2, watcher restarts should
+// NOT reset notification state, but genuine first-time init should. The
+// state machine function itself is stateless; this test verifies that initial
+// state values work correctly.
+let initialState = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0 };
+let firstFault = Model.computeNotifyState(ocpStatus, initialState, 3, 60000, 100);
+eq(firstFault.shouldNotify, true, "first fault from init state notifies");
+eq(firstFault.lastFaultKey, "Over-Current", "first fault sets key");
+
+// Verify that preserved state (non-zero lastNotifyAt) enforces cooldown
+let preservedState = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 50000 };
+let afterRestart = Model.computeNotifyState(ocpStatus, preservedState, 3, 60000, 51000);
+eq(afterRestart.shouldNotify, false, "preserved state enforces cooldown after restart");
 
 console.log("model.test.mjs: all assertions passed");

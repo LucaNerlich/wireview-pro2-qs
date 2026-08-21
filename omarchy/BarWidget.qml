@@ -67,6 +67,13 @@ BarWidget {
   function toggle() { if (panelItem) panelItem.toggle() }
 
   property string lastFaultKey: ""
+  // Hysteresis against threshold flapping: a fault must stay clear for this
+  // many consecutive readings before the same fault may notify again, and
+  // any two notifications are separated by at least notifyCooldownMs.
+  readonly property int faultClearStreak: 3
+  readonly property int notifyCooldownMs: 60000
+  property int faultFreeStreak: 0
+  property double lastNotifyAt: 0
   property var pendingNotify: null
 
   function applyLine(line) {
@@ -87,16 +94,28 @@ BarWidget {
   }
 
   function maybeNotify(status) {
-    var alert = Model.faultAlert(status)
-    var key = alert ? String(alert.key) : ""
-    if (key === root.lastFaultKey) return
-    root.lastFaultKey = key
-    if (!alert) {
-      root.pendingNotify = null
-      return
+    var currentState = {
+      lastFaultKey: root.lastFaultKey,
+      faultFreeStreak: root.faultFreeStreak,
+      lastNotifyAt: root.lastNotifyAt
     }
-    root.pendingNotify = alert
-    root.flushNotify()
+    var newState = Model.computeNotifyState(
+      status,
+      currentState,
+      root.faultClearStreak,
+      root.notifyCooldownMs,
+      Date.now()
+    )
+    root.lastFaultKey = newState.lastFaultKey
+    root.faultFreeStreak = newState.faultFreeStreak
+    root.lastNotifyAt = newState.lastNotifyAt
+    if (newState.shouldNotify) {
+      root.pendingNotify = newState.alert
+      root.flushNotify()
+    } else if (!Model.faultAlert(status)) {
+      // Clear pending notification when no fault is present
+      root.pendingNotify = null
+    }
   }
 
   function flushNotify() {
@@ -114,7 +133,9 @@ BarWidget {
     root.appRunning = false
     root.watts = NaN
     root.sensors = null
-    root.lastFaultKey = ""
+    // Preserve notification state (lastNotifyAt, faultFreeStreak, lastFaultKey)
+    // across transient watcher exits and failed starts. They are only reset
+    // during genuine first-time initialization (Component.onCompleted path).
     root.pendingNotify = null
   }
 

@@ -156,7 +156,10 @@ function faultAlert(status) {
     body += " — pin " + (stats.maxIndex + 1) + " at " + fmt(stats.maxA, 1) + " A";
 
   return {
-    key: names.join("|"),
+    // The hot-pin index is part of the key so that a moved hotspot (e.g.
+    // pin 1 -> pin 3) re-notifies once instead of being swallowed as an
+    // unchanged "Current Imbalance" alert.
+    key: names.join("|") + (stats && stats.warn ? "@" + stats.maxIndex : ""),
     headline: "WireView Pro II fault",
     body: body
   };
@@ -349,11 +352,56 @@ function pinIsHot(sensors, index) {
   return !!(stats && stats.warn && index === stats.maxIndex);
 }
 
+/**
+ * Computes the next notification state based on current status and state machine parameters.
+ * This is the testable core of BarWidget.maybeNotify().
+ * @param {Object} status - The current device status.
+ * @param {Object} state - Current notification state with { lastFaultKey, faultFreeStreak, lastNotifyAt }.
+ * @param {number} faultClearStreak - Number of consecutive clear readings required before re-notifying for the same fault.
+ * @param {number} notifyCooldownMs - Minimum milliseconds between notifications.
+ * @param {number} nowMs - Current timestamp in milliseconds.
+ * @returns {Object} New state with { lastFaultKey, faultFreeStreak, lastNotifyAt, shouldNotify, alert }.
+ */
+function computeNotifyState(status, state, faultClearStreak, notifyCooldownMs, nowMs) {
+  var alert = faultAlert(status);
+  var newState = {
+    lastFaultKey: state.lastFaultKey,
+    faultFreeStreak: state.faultFreeStreak,
+    lastNotifyAt: state.lastNotifyAt,
+    shouldNotify: false,
+    alert: null
+  };
+
+  if (!alert) {
+    newState.faultFreeStreak = state.faultFreeStreak + 1;
+    if (newState.faultFreeStreak >= faultClearStreak) {
+      newState.lastFaultKey = "";
+    }
+    return newState;
+  }
+
+  newState.faultFreeStreak = 0;
+  var key = String(alert.key);
+  if (key === state.lastFaultKey) {
+    return newState;
+  }
+
+  if (nowMs - state.lastNotifyAt < notifyCooldownMs) {
+    return newState;
+  }
+
+  newState.lastFaultKey = key;
+  newState.lastNotifyAt = nowMs;
+  newState.shouldNotify = true;
+  newState.alert = alert;
+  return newState;
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     parseLine, formatWatts, labelText, tooltipText, stateLine, appLine,
     hasSensors, hasLiveFault, fmt, fmtTemp, fmtFan, fmtFault, fmtFaultNames,
     namedFaults,     pinStats, pinPower, imbalanceLine, pinIsHot, safeTitle,
-    faultAlert, notifyCommand
+    faultAlert, notifyCommand, computeNotifyState
   };
 }
