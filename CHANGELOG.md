@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-08-21
+
+### Fixed
+
+- The widget now detects the WireView2 app however it was started (desktop
+  file, autostart, terminal), not only when the widget launched it itself.
+  Open focuses the existing window instead of spawning duplicates, and
+  Restart/Quit actually reach the running instance.
+- Fault alerts no longer spam critical notifications when a reading flaps
+  around a threshold; a genuinely new fault still alerts immediately, and a
+  moved hot pin re-notifies once.
+- Transient DBus errors no longer flash the bar to "off" (or hide the widget
+  under `hideWhenOff`); the last reading is held until the bus recovers, and
+  the normal app-closed state no longer churns session-bus connections.
+- A missing `omarchy-notification-send` no longer silently swallows critical
+  fault alerts (falls back to `notify-send`), and failed Open/Restart/Quit
+  actions now surface a notification instead of doing nothing.
+- Steady-state polling touches only the app's own tray item instead of every
+  tray application each second, so one hung tray peer can no longer stall
+  status updates for seconds.
+
+### Changed
+
+- CI pins third-party GitHub Actions to commit SHAs.
+
 ## [1.2.3] - 2026-08-21
 
 ### Changed
