@@ -271,4 +271,84 @@ let preservedState = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 50000
 let afterRestart = Model.computeNotifyState(ocpStatus, preservedState, 3, 60000, 51000);
 eq(afterRestart.shouldNotify, false, "preserved state enforces cooldown after restart");
 
+// imbalancePresent / isImbalanceOnlyAlert (persistence gate helpers)
+
+eq(Model.imbalancePresent(clearStatus), false, "balanced currents show no imbalance");
+eq(Model.imbalancePresent(imbalanceStatus), true, "computed imbalance detected");
+eq(Model.imbalancePresent({ sensors: { faultStatus: 0x20 } }), true, "firmware imbalance bit detected");
+eq(Model.imbalancePresent(null), false, "null status shows no imbalance");
+
+eq(Model.isImbalanceOnlyAlert({ key: "Current Imbalance@0" }), true, "sole imbalance alert");
+eq(Model.isImbalanceOnlyAlert({ key: "Over-Current|Current Imbalance" }), false, "mixed alert is not imbalance-only");
+eq(Model.isImbalanceOnlyAlert(null), false, "null alert is not imbalance-only");
+
+// computeNotifyState persistence gate: an imbalance must hold for N consecutive
+// readings (~seconds at the watcher's fixed 1 Hz poll) before it may notify.
+const gateStreak = 5;
+
+// (e) a single transient imbalance reading stays silent but starts the window
+let g1 = Model.computeNotifyState(imbalanceStatus, { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0, imbalanceStreak: 0 }, 3, 60000, 1000, gateStreak);
+eq(g1.shouldNotify, false, "first imbalance reading does not notify");
+eq(g1.alert, null, "pending alert withheld");
+eq(g1.imbalanceStreak, 1, "window started");
+
+// (f) readings 2..4 keep the window open without notifying
+for (let i = 2; i < gateStreak; i++) {
+  g1 = Model.computeNotifyState(imbalanceStatus, g1, 3, 60000, i * 1000, gateStreak);
+  eq(g1.shouldNotify, false, "reading " + i + " still pending");
+}
+eq(g1.imbalanceStreak, 4, "window at threshold minus one");
+eq(g1.lastFaultKey, "", "cooldown/key state untouched while pending");
+
+// (g) the fifth consecutive reading confirms and notifies
+g1 = Model.computeNotifyState(imbalanceStatus, g1, 3, 60000, 5000, gateStreak);
+eq(g1.shouldNotify, true, "confirmed imbalance notifies on 5th consecutive reading");
+eq(g1.alert.key, "Current Imbalance@0", "confirmed alert carries the hot pin");
+eq(g1.lastFaultKey, "Current Imbalance@0", "key recorded after confirmation");
+
+// (h) a spike that clears mid-window resets the wait
+let spikeState = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0, imbalanceStreak: 3 };
+let g2 = Model.computeNotifyState(clearStatus, spikeState, 3, 60000, 4000, gateStreak);
+eq(g2.imbalanceStreak, 0, "clear reading resets the window");
+g2 = Model.computeNotifyState(imbalanceStatus, g2, 3, 60000, 5000, gateStreak);
+eq(g2.shouldNotify, false, "restarted window is pending again");
+eq(g2.imbalanceStreak, 1, "restarted window counts from one");
+
+// (i) a moving hot pin does not reset the window; the confirmed alert names
+// whichever pin is hottest at confirmation time
+let movedStatus = { sensors: { faultStatus: 0, currentA: [1, 1, 9.0, 1, 1, 1] } };
+let g3 = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0, imbalanceStreak: 4 };
+g3 = Model.computeNotifyState(movedStatus, g3, 3, 60000, 5000, gateStreak);
+eq(g3.shouldNotify, true, "hot pin move keeps the streak alive");
+eq(g3.alert.key, "Current Imbalance@2", "confirmed alert names the current hot pin");
+
+// (j) firmware-reported imbalance (bit 0x20) is gated identically
+const fwImbalance = { sensors: { faultStatus: 0x20 } };
+let g4 = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0, imbalanceStreak: 0 };
+for (let i = 1; i < gateStreak; i++) {
+  g4 = Model.computeNotifyState(fwImbalance, g4, 3, 60000, i * 1000, gateStreak);
+  eq(g4.shouldNotify, false, "firmware imbalance reading " + i + " pending");
+}
+g4 = Model.computeNotifyState(fwImbalance, g4, 3, 60000, 5000, gateStreak);
+eq(g4.shouldNotify, true, "firmware imbalance confirms after the window");
+eq(g4.alert.key, "Current Imbalance", "firmware key carries no pin suffix");
+
+// (k) non-imbalance faults bypass the gate entirely
+let ocpGate = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0, imbalanceStreak: 0 };
+let g5 = Model.computeNotifyState(ocpStatus, ocpGate, 3, 60000, 1000, gateStreak);
+eq(g5.shouldNotify, true, "OCP notifies immediately without an imbalance window");
+eq(g5.imbalanceStreak, 0, "no imbalance evidence leaves the streak at zero");
+
+// (l) a mixed alert (other fault + computed imbalance) is not held back
+const mixedStatus = { sensors: { faultStatus: 0x04, currentA: [9, 1, 1, 1, 1, 1] } };
+let mixedGate = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0, imbalanceStreak: 0 };
+let g6 = Model.computeNotifyState(mixedStatus, mixedGate, 3, 60000, 1000, gateStreak);
+eq(g6.shouldNotify, true, "mixed alert notifies on first sight");
+eq(Model.isImbalanceOnlyAlert(g6.alert), false, "mixed alert detected as such");
+
+// (m) omitting the confirm parameter keeps the legacy first-sight behavior
+let legacyGate = { lastFaultKey: "", faultFreeStreak: 0, lastNotifyAt: 0 };
+let g7 = Model.computeNotifyState(imbalanceStatus, legacyGate, 3, 60000, 1000);
+eq(g7.shouldNotify, true, "default parameter notifies on first sight");
+
 console.log("model.test.mjs: all assertions passed");

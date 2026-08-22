@@ -72,8 +72,13 @@ BarWidget {
   // any two notifications are separated by at least notifyCooldownMs.
   readonly property int faultClearStreak: 3
   readonly property int notifyCooldownMs: 60000
+  // Debounced imbalance alerts: a Current Imbalance must persist for this many
+  // consecutive readings (~seconds at the watcher's fixed 1 Hz poll) before it
+  // may raise a notification, so momentary load transients stay silent.
+  readonly property int imbalanceConfirmStreak: 5
   property int faultFreeStreak: 0
   property double lastNotifyAt: 0
+  property int imbalanceStreak: 0
   property var pendingNotify: null
 
   function applyLine(line) {
@@ -97,18 +102,21 @@ BarWidget {
     var currentState = {
       lastFaultKey: root.lastFaultKey,
       faultFreeStreak: root.faultFreeStreak,
-      lastNotifyAt: root.lastNotifyAt
+      lastNotifyAt: root.lastNotifyAt,
+      imbalanceStreak: root.imbalanceStreak
     }
     var newState = Model.computeNotifyState(
       status,
       currentState,
       root.faultClearStreak,
       root.notifyCooldownMs,
-      Date.now()
+      Date.now(),
+      root.imbalanceConfirmStreak
     )
     root.lastFaultKey = newState.lastFaultKey
     root.faultFreeStreak = newState.faultFreeStreak
     root.lastNotifyAt = newState.lastNotifyAt
+    root.imbalanceStreak = newState.imbalanceStreak
     if (newState.shouldNotify) {
       root.pendingNotify = newState.alert
       root.flushNotify()
@@ -171,9 +179,10 @@ BarWidget {
     root.appRunning = false
     root.watts = NaN
     root.sensors = null
-    // Preserve notification state (lastNotifyAt, faultFreeStreak, lastFaultKey)
-    // across transient watcher exits and failed starts. They are only reset
-    // during genuine first-time initialization (Component.onCompleted path).
+    // Preserve notification state (lastNotifyAt, faultFreeStreak, lastFaultKey,
+    // imbalanceStreak) across transient watcher exits and failed starts. They
+    // are only reset during genuine first-time initialization
+    // (Component.onCompleted path).
     root.pendingNotify = null
   }
 

@@ -278,6 +278,8 @@ function fmtFaultNames(bits) {
 // Firmware v03 imbalance alarm: a pin at >= 6 A and (max-min)/max > 40%.
 var IMBALANCE_MIN_A = 6;
 var IMBALANCE_SPREAD_PCT = 40;
+// FAULT_NAMES bit 5: firmware-reported Current Imbalance.
+var IMBALANCE_FAULT_BIT = 1 << 5;
 
 /**
  * Calculates current statistics and identifies significant imbalance across sensor pins.
@@ -308,6 +310,36 @@ function pinStats(sensors) {
     spreadPct: spreadPct,
     warn: maxI >= IMBALANCE_MIN_A && spreadPct > IMBALANCE_SPREAD_PCT
   };
+}
+
+/**
+ * Determines whether the current status shows a current-imbalance condition,
+ * either via the firmware alarm bit or the computed per-pin heuristic.
+ * @param {Object|null|undefined} status - The parsed device status to inspect.
+ * @return {boolean} `true` when an imbalance is present, `false` otherwise.
+ */
+function imbalancePresent(status) {
+  var sensors = status && status.sensors;
+  var bits = Number(sensors && sensors.faultStatus);
+  if (isFinite(bits) && (bits & IMBALANCE_FAULT_BIT)) return true;
+  var stats = pinStats(sensors);
+  return !!(stats && stats.warn);
+}
+
+/**
+ * Determines whether every fault in an alert belongs to the Current Imbalance
+ * family, so persistence gating applies; alerts that carry any other fault
+ * name are urgent regardless of the imbalance window.
+ * @param {Object|null|undefined} alert - The alert payload with a `key`.
+ * @return {boolean} `true` when the alert is solely a Current Imbalance, `false` otherwise.
+ */
+function isImbalanceOnlyAlert(alert) {
+  if (!alert) return false;
+  var names = String(alert.key).split("@")[0].split("|");
+  for (var i = 0; i < names.length; i++) {
+    if (names[i] !== "Current Imbalance") return false;
+  }
+  return true;
 }
 
 /**
@@ -356,18 +388,21 @@ function pinIsHot(sensors, index) {
  * Computes the next notification state based on current status and state machine parameters.
  * This is the testable core of BarWidget.maybeNotify().
  * @param {Object} status - The current device status.
- * @param {Object} state - Current notification state with { lastFaultKey, faultFreeStreak, lastNotifyAt }.
+ * @param {Object} state - Current notification state with { lastFaultKey, faultFreeStreak, lastNotifyAt, imbalanceStreak }.
  * @param {number} faultClearStreak - Number of consecutive clear readings required before re-notifying for the same fault.
  * @param {number} notifyCooldownMs - Minimum milliseconds between notifications.
  * @param {number} nowMs - Current timestamp in milliseconds.
- * @returns {Object} New state with { lastFaultKey, faultFreeStreak, lastNotifyAt, shouldNotify, alert }.
+ * @param {number} [imbalanceConfirmStreak] - Consecutive imbalance readings required before an imbalance-only alert may notify (default 1 = notify on first sight).
+ * @returns {Object} New state with { lastFaultKey, faultFreeStreak, lastNotifyAt, imbalanceStreak, shouldNotify, alert }.
  */
-function computeNotifyState(status, state, faultClearStreak, notifyCooldownMs, nowMs) {
+function computeNotifyState(status, state, faultClearStreak, notifyCooldownMs, nowMs, imbalanceConfirmStreak) {
   var alert = faultAlert(status);
+  var confirmStreak = Math.max(1, Math.floor(Number(imbalanceConfirmStreak) || 1));
   var newState = {
     lastFaultKey: state.lastFaultKey,
     faultFreeStreak: state.faultFreeStreak,
     lastNotifyAt: state.lastNotifyAt,
+    imbalanceStreak: 0,
     shouldNotify: false,
     alert: null
   };
@@ -377,6 +412,17 @@ function computeNotifyState(status, state, faultClearStreak, notifyCooldownMs, n
     if (newState.faultFreeStreak >= faultClearStreak) {
       newState.lastFaultKey = "";
     }
+    return newState;
+  }
+
+  // An imbalance seen this reading extends the persistence window; any other
+  // reading resets it. (imbalancePresent implies alert exists, so this runs
+  // only on the alert path.)
+  newState.imbalanceStreak = imbalancePresent(status) ? (Number(state.imbalanceStreak) || 0) + 1 : 0;
+
+  // A solely-imbalance alert must persist across consecutive readings before
+  // it becomes actionable; while pending, cooldown/key state stays untouched.
+  if (newState.imbalanceStreak < confirmStreak && isImbalanceOnlyAlert(alert)) {
     return newState;
   }
 
@@ -415,6 +461,7 @@ if (typeof module !== "undefined" && module.exports) {
     parseLine, formatWatts, labelText, tooltipText, stateLine, appLine,
     hasSensors, hasLiveFault, fmt, fmtTemp, fmtFan, fmtFault, fmtFaultNames,
     namedFaults,     pinStats, pinPower, imbalanceLine, pinIsHot, safeTitle,
-    faultAlert, notifyCommand, computeNotifyState
+    faultAlert, notifyCommand, computeNotifyState,
+    imbalancePresent, isImbalanceOnlyAlert
   };
 }
