@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-22
+
+### Changed
+
+- Current Imbalance notifications are debounced: the condition must persist
+  across five consecutive readings (~5 s at the watcher's 1 Hz poll), from
+  either the firmware alarm bit or the computed per-pin heuristic, before a
+  critical notification fires, so momentary load transients stay silent. A
+  moving hot pin does not reset the window. Other faults (OCP, OTP, OPP, …)
+  still notify immediately, and the bar's urgent coloring keeps reflecting
+  live state without delay.
+
 ## [1.2.4] - 2026-08-21
 
 ### Fixed
